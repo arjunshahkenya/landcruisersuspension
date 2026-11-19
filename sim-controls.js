@@ -35,7 +35,7 @@ function normalize(value, {min, max, step}) {
   return Number((min + Math.round((bounded - min) / step) * step).toFixed(6));
 }
 
-export function createControls(container, defaults, onChange) {
+export function createControls(container, defaults, onChange, {limits: ranges=LIMITS, current=defaults}={}) {
   const values = {}, initial = {}, fields = new Map();
   const id = 'suspension-setup-' + ++nextId;
   const panel = element('section', 'susp-controls');
@@ -57,7 +57,7 @@ export function createControls(container, defaults, onChange) {
 
   function display(key, rewriteNumber = true) {
     const { slider, number, row, spokenUnit, note } = fields.get(key);
-    const { min, max } = LIMITS[key];
+    const { min, max } = ranges[key];
     const value = values[key];
     const percent = (value - min) * 100 / (max - min);
     row.style.setProperty('--susp-progress', percent + '%');
@@ -85,9 +85,9 @@ export function createControls(container, defaults, onChange) {
   }
 
   for (const {key, label, unit, spokenUnit, note} of parameters) {
-    const limits = LIMITS[key];
+    const limits = ranges[key];
     initial[key] = normalize(defaults[key], limits);
-    values[key] = initial[key];
+    values[key] = normalize(current[key], limits);
     const row = element('div', 'susp-controls__field');
     row.dataset.setting = key;
     const labelRow = element('div', 'susp-controls__label-row');

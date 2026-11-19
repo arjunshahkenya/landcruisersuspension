@@ -4,11 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f8f9f6">
-  <meta name="description" content="Explore a photo-referenced Toyota Land Cruiser 100 Series in 3D, from its roof rack to the suspension and underbody.">
+  <meta name="description" content="Explore a Land Cruiser, Porsche 911, GR Yaris Rally1 and Dakar truck in 3D, including each vehicle’s suspension and underbody.">
   <title>Land Cruiser Studio · Land Cruiser V8</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23274438'/%3E%3Cpath d='m5 25 9-13 6 9 6-11 9 15M5 29l9-12 6 9 6-11 9 14' fill='none' stroke='%23e4ebd5' stroke-width='1.7' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./studio-nav.css">
+  <link rel="stylesheet" href="./vehicle-picker.css">
   <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 </head>
 <body>
@@ -40,13 +41,14 @@
   </header>
 
   <main class="page">
+    <nav class="vehicle-picker" id="vehicle-picker" aria-label="Select a vehicle"></nav>
     <section class="viewer-panel" aria-labelledby="vehicle-name">
       <div class="stage" id="stage">
 
         <canvas id="model-canvas" tabindex="0" aria-label="Interactive 3D model of the Toyota Land Cruiser. Drag to orbit, or use the camera view buttons below."></canvas>
 
         <div class="vehicle-ident">
-          <div class="eyebrow"><span class="eyebrow-line" aria-hidden="true"></span>TOYOTA <span class="slash" aria-hidden="true">/</span> 100 SERIES</div>
+          <div class="eyebrow"><span class="eyebrow-line" aria-hidden="true"></span><span id="vehicle-make">TOYOTA</span> <span class="slash" aria-hidden="true">/</span> <span id="vehicle-variant">100 SERIES</span></div>
           <h1 id="vehicle-name">Land Cruiser V8</h1>
           <div class="registration" aria-label="Kenyan registration KBJ 702L"><span class="kenya-flag" aria-hidden="true"></span>KBJ 702L</div>
         </div>
@@ -92,6 +94,7 @@
         <button type="button" class="mechanical-view" data-part="front-suspension" aria-pressed="false">Front suspension</button>
         <button type="button" class="mechanical-view" data-part="rear-axle" aria-pressed="false">Rear axle</button>
         <button type="button" id="chassis-toggle" class="chassis-toggle" aria-pressed="false" hidden><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span>Isolate chassis</span></button>
+        <a id="drive-suspension" class="drive-suspension" href="./simulator/">Run suspension test</a>
         </div>
       </div>
     </section>

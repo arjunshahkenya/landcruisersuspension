@@ -1,0 +1,10 @@
+.vehicle-picker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:0 0 12px}
+.vehicle-card{position:relative;display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0;padding:10px 12px 10px 22px;color:#33463a;text-decoration:none;background:#fdfefb;border:1px solid #d8dfd6;border-radius:9px}
+.vehicle-card::before{content:"";position:absolute;left:11px;top:13px;bottom:13px;width:3px;border-radius:3px;background:var(--vehicle-colour)}
+.vehicle-card strong{font-size:.91rem;line-height:1.2;letter-spacing:-.025em;font-weight:650}
+.vehicle-card small{font-size:.72rem;line-height:1.2;color:#5b685e}
+.vehicle-card[aria-current]{border-color:#6d8575;background:#eaf0e8;box-shadow:inset 0 0 0 1px #899e8c42}
+.vehicle-card:hover{border-color:#829b86;background:#f1f5ee}
+.vehicle-card:focus-visible{outline:3px solid #6a8a70;outline-offset:2px}
+@media(max-width:640px){.vehicle-picker{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-bottom:9px}.vehicle-card{padding:8px 7px 8px 17px;gap:2px}.vehicle-card::before{left:8px;top:10px;bottom:10px}.vehicle-card strong{font-size:.83rem}.vehicle-card small{font-size:.67rem}}
+.drive-suspension{align-self:center;padding:7px 10px;color:#294c37;font-size:.81rem;font-weight:620;text-underline-offset:3px}

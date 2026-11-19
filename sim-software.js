@@ -5,6 +5,8 @@ import { finishes, pieces, packed, drivingTexture } from './model/sim-driving-me
 import * as chassisMesh from './model/sim-driving-chassis.js';
 import { roadHeight } from './sim-physics.js';
 import { makeDrivingReflection } from './software-shading.js';
+import { prepareFleetSoftware } from './fleet-software.js';
+import { makeKeyShadow } from './software-shadow.js';
 
 const TAU=2*Math.PI, WHEEL=.405, FRONT=1.42, REAR=-1.43;
 const clamp=(x,l,h)=>Math.max(l,Math.min(h,x));
@@ -134,8 +136,8 @@ function wheels(g){
 
 function frameRise(sample,run){
   const s=run.static, c=Math.cos(-sample.pitch),n=Math.sin(-sample.pitch);
-  const cg=FRONT-run.geometry.frontArm, nominal=(run.geometry.rearArm*s.nominalFrontTireDeflection+run.geometry.frontArm*s.nominalRearTireDeflection)/run.geometry.wheelbase;
-  const dy=.85+sample.body-nominal-.85*c+cg*n,dz=cg-.85*n-cg*c;
+  const pivot=run.geometry.cgHeight??.85, cg=(run.geometry.frontAxleZ??FRONT)-run.geometry.frontArm, nominal=(run.geometry.rearArm*s.nominalFrontTireDeflection+run.geometry.frontArm*s.nominalRearTireDeflection)/run.geometry.wheelbase;
+  const dy=pivot+sample.body-nominal-pivot*c+cg*n,dz=cg-pivot*n-cg*c;
   const wheelF=sample.frontWheel-s.nominalFrontTireDeflection,wheelR=sample.rearWheel-s.nominalRearTireDeflection;
   return {c,n,dy,dz,wheelF,wheelR,world:(p)=>[p[0],p[1]*c-p[2]*n+dy,p[1]*n+p[2]*c+dz]};
 }
@@ -173,7 +175,7 @@ function articulations(g,pose){
 }
 
 function road(g,sample,run){
-  const start=FRONT-sample.x, width=run.settings.bumpWidth, full=2.15;
+  const frontAxle=run.geometry.frontAxleZ??FRONT, start=frontAxle-sample.x, width=run.settings.bumpWidth, full=2.15;
   const height=z=>roadHeight(z-start,run.settings);
   const stations=[-65,65];
   for(let i=0;i<=24;i++){
@@ -198,7 +200,7 @@ function road(g,sample,run){
   }
   const phase=((sample.x%1.5)+1.5)%1.5;
   for(let i=-13;i<=13;i++)for(const side of [-1,1]){
-    const z=FRONT+i*1.5-phase;
+    const z=frontAxle+i*1.5-phase;
     if(z>start-.05&&z<start+width+.05) continue;
     const x=side*1.86;
     surface(tick,x-.058,x+.058,z,z+.045,.003);
@@ -233,11 +235,19 @@ function loadMaps(done){
 const rgbInt=(r,g,b)=>0xff000000|(clamp(b,0,255)<<16)|(clamp(g,0,255)<<8)|clamp(r,0,255);
 const missingColor=file=>(file.includes('paint')||file.includes('bonnet'))?[42,83,79]:file.includes('glass')?[70,97,102]:file.includes('cladding')?[151,148,133]:file.includes('taillight')?[157,54,45]:file.includes('headlight')?[194,196,174]:file.includes('wheel')?[70,70,66]:file.includes('spare')?[62,64,60]:[181,186,171];
 
-export function createSimSoftware(canvas,THREE){
+export function createSimSoftware(canvas,THREE,rig=null){
   const ctx=canvas.getContext('2d',{alpha:false});if(!ctx)throw new Error('A Canvas2D context is required.');
-  const vehicle=readMesh(packed,pieces),mechanism=new Geometry();
-  wheels(mechanism);vehicle.push(...readMesh(chassisMesh.packed,chassisMesh.pieces,chassisOffset),...mechanism.mesh());
-  const projection=new THREE.Matrix4(),scratch=new Map();
+  const sceneMaterials=materials.slice();
+  const fleet=rig ? prepareFleetSoftware(THREE,rig,sceneMaterials) : null;
+  const castMaterials=fleet?sceneMaterials.map(m=>({transparent:m[5]})):null;
+  let shadowCaster, fleetShadow;
+  let vehicle=[];
+  if(!fleet){
+    const mechanism=new Geometry();
+    wheels(mechanism);
+    vehicle=[...readMesh(packed,pieces),...readMesh(chassisMesh.packed,chassisMesh.pieces,chassisOffset),...mechanism.mesh()];
+  }
+  const projection=new THREE.Matrix4(),frustum=fleet ? new THREE.Frustum() : null,scratch=new Map();
   const reflection=makeDrivingReflection();
   let W=0,H=0,requestedW=0,requestedH=0,image,rgba,depth,backdrop;
   let dead=false,last=null,queued=false,sceneKey='',live=[],prevCost=0,scaleHint=1,refine=0;
@@ -245,7 +255,7 @@ export function createSimSoftware(canvas,THREE){
   // is attenuated with distance rather than swimming in screen coordinates.
   const grain=new Int8Array(256*256); let seed=87431;
   for(let i=0;i<grain.length;i++){seed=(Math.imul(1664525,seed)+1013904223)>>>0;grain[i]=((seed>>>26)-31)/5;}
-  const maps=loadMaps(()=>{
+  const maps=fleet ? new Map() : loadMaps(()=>{
     if(dead||!last||queued)return;
     queued=true;
     const redraw=()=>{queued=false;if(!dead&&last)draw(...last);};
@@ -276,24 +286,39 @@ export function createSimSoftware(canvas,THREE){
     dimensions(settled);rgba.set(backdrop);depth.fill(0);
     camera.updateMatrixWorld();projection.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
     const M=projection.elements,eye=camera.position, near=camera.near;
+    frustum?.setFromProjectionMatrix(projection);
     const pose=frameRise(sample,run),spin=(sample.x-run.startX)/WHEEL,cs=Math.cos(spin),sn=Math.sin(spin);
     const groundOn=eye.y>.055;
     const key=[run.settings.speed,run.settings.bumpWidth,run.settings.bumpHeight,run.settings.weight,run.settings.stiffness,sample.t,groundOn].join('|');
     if(key!==sceneKey){
       const g=new Geometry();
-      articulations(g,pose);if(groundOn)road(g,sample,run);live=g.mesh();sceneKey=key;
+      if(!fleet)articulations(g,pose);
+      if(groundOn)road(g,sample,run);
+      live=g.mesh();sceneKey=key;
     }
+    if(fleet){
+      vehicle=fleet.sync(sample,run,cutaway);
+      if(settled && vehicle!==shadowCaster){
+        fleetShadow=makeKeyShadow(vehicle,castMaterials,new Uint8Array(vehicle.length).fill(1));
+        shadowCaster=vehicle;
+      }
+    }
+    const geo=run.geometry,frontZ=geo.frontAxleZ??FRONT,rearZ=geo.rearAxleZ??REAR;
+    const shadowW=(geo.width??1.94)*.71,shadowL=(geo.length??4.89)*.59;
     const solid=[],blended=[],track=[],transparentTriangles=[];
     for(const mesh of [...vehicle,...live]){
+      if(mesh.object && !frustum.intersectsObject(mesh.object))continue;
       if(cutaway && (mesh.rig==='shell'||mesh.rig==='floor'||mesh.rig==='fw-1'||mesh.rig==='rw-1'))continue;
       if(mesh.rig==='ground')track.push(mesh);
-      else if(materials[mesh.material][5])blended.push(mesh);
+      else if(sceneMaterials[mesh.material][5])blended.push(mesh);
       else solid.push(mesh);
     }
     // Opaque bodywork fills depth first so hidden stretches of track can skip
     // their grain and shadow work. Glass composites over the resulting color.
     for(const mesh of [...solid,...track,...blended]){
-      const m=materials[mesh.material],p=mesh.positions,n=mesh.normals, idx=mesh.indices,uv=mesh.uv,rig=mesh.rig;
+      const m=sceneMaterials[mesh.material],p=mesh.positions,n=mesh.normals, idx=mesh.indices,uv=mesh.uv,rig=mesh.rig;
+      const shade=rig==='fleet'?m[6]:null, shadow=shade&&vehicle===shadowCaster?fleetShadow:null;
+      const winding=mesh.object?.matrixWorld.determinant()<0 ? -1 : 1;
       const buf=scratchFor(mesh), levels=maps.get(m[3]), color=(!levels&&m[3])?missingColor(m[3]):m[0];
       const isGlass=m[5], opacity=isGlass?m[4]:1,base=m[1],rough=m[2];
       const transparentSurface=isGlass && opacity<.99;
@@ -322,6 +347,15 @@ export function createSimSoftware(canvas,THREE){
         buf[o]=sx;buf[o+1]=sy;buf[o+2]=w;
         if(w>=near){visible++;if(sx>=0)allL=false;if(sx<W)allR=false;if(sy>=0)allT=false;if(sy<H)allB=false;}
         const nx=n[k],ny=n[k+1]*c-n[k+2]*s,nz=n[k+1]*s+n[k+2]*c;
+        if(shade){
+          let vx=eye.x-x,vy=eye.y-y,vz=eye.z-z;
+          const inverse=1/Math.sqrt(vx*vx+vy*vy+vz*vz+.000001);
+          vx*=inverse;vy*=inverse;vz*=inverse;
+          const key=shadow?shadow.visible(x,y,z,nx,ny,nz):1;
+          shade(nx,ny,nz,vx,vy,vz,buf,o+3,key);
+          // A fourth channel is unused for the fleet's geometric liveries.
+          continue;
+        }
         const sun=Math.max(0,-.56*nx+.73*ny+.39*nz),fill=Math.max(0,.54*nx+.38*ny-.57*nz);
         let light=.66+.36*sun+.11*(ny*.5+.5)+.16*fill;
         if(under)light+=.13+.20*Math.max(0,-ny);
@@ -339,7 +373,7 @@ export function createSimSoftware(canvas,THREE){
           const lacquer=transparentSurface?.72:base*(.49+.60*gloss);
           glint=(12+39*grazing)*lacquer*sky;
         }
-        buf[o+3]=light;buf[o+4]=glint;buf[o+5]=uv[i*2];buf[o+6]=uv[i*2+1];
+        buf[o+3]=light;buf[o+4]=glint;buf[o+5]=uv?uv[i*2]:0;buf[o+6]=uv?uv[i*2+1]:0;
       }
       // If some vertices are behind the camera they may still clip onto the
       // screen, particularly the long road. Only reject a fully projected mesh.
@@ -349,17 +383,19 @@ export function createSimSoftware(canvas,THREE){
       const carLoad=clamp(1-.78*pose.dy,.62,1.08),xAdvance=sample.x;
       const frontLoad=clamp(1-Math.max(0,pose.wheelF-sample.frontRoad)*4.5,0,1);
       const rearLoad=clamp(1-Math.max(0,pose.wheelR-sample.rearRoad)*4.5,0,1);
-      const depthBias=roadFill&&mesh.material!==asphalt&&mesh.material!==bumpMat&&mesh.material!==shoulder?1e-6:0;
+      const depthBias=roadFill&&mesh.material!==asphalt&&mesh.material!==bumpMat&&mesh.material!==shoulder?1e-6:(mesh.offset||0);
       function raster(a,b,c){
         const x0=buf[a],y0=buf[a+1],q0=1/buf[a+2],x1=buf[b],y1=buf[b+1],q1=1/buf[b+2],x2=buf[c],y2=buf[c+1],q2=1/buf[c+2];
         const dx1=x1-x0,dx2=x2-x0,dy1=y1-y0,dy2=y2-y0, det=dx1*dy2-dx2*dy1;
-        if(Math.abs(det)<.035)return;
+        if(Math.abs(det)<.035 || (mesh.side===0 && det*winding>0) || (mesh.side===1 && det*winding<0))return;
         const first=Math.max(0,Math.ceil(Math.min(y0,y1,y2)-.5)),lastY=Math.min(H-1,Math.floor(Math.max(y0,y1,y2)-.5));
         const minX=Math.max(0,Math.ceil(Math.min(x0,x1,x2)-.5)),maxX=Math.min(W-1,Math.floor(Math.max(x0,x1,x2)-.5));
         if(lastY<first||minX>maxX)return;
         const ax=dy2/det,bx=-dy1/det,ay=-dx2/det,by=dx1/det, qx=(q1-q0)*ax+(q2-q0)*bx,qy=(q1-q0)*ay+(q2-q0)*by;
         const f0=buf[a+3],g0=buf[a+4],f1=buf[b+3]-f0,f2=buf[c+3]-f0,g1=buf[b+4]-g0,g2=buf[c+4]-g0;
         const fx=f1*ax+f2*bx,fy=f1*ay+f2*by,gx=g1*ax+g2*bx,gy=g1*ay+g2*by;
+        const blue0=shade?buf[a+5]:0,blue1=shade?buf[b+5]-blue0:0,blue2=shade?buf[c+5]-blue0:0;
+        const blueX=blue1*ax+blue2*bx,blueY=blue1*ay+blue2*by;
         const u0=buf[a+5]*q0,v0=buf[a+6]*q0;
         let ux=0,uy=0,vx=0,vy=0,tex=null;
         if(levels||roadFill){
@@ -382,7 +418,8 @@ export function createSimSoftware(canvas,THREE){
           if(start>end)continue;
           const dx=start+.5-x0,dy=yy-y0;
           let q=q0+dx*qx+dy*qy,f=f0+dx*fx+dy*fy,g=g0+dx*gx+dy*gy,u=u0+dx*ux+dy*uy,v=v0+dx*vx+dy*vy,px=y*W+start;
-          for(let x=start;x<=end;x++,px++,q+=qx,f+=fx,g+=gx,u+=ux,v+=vx){
+          let blue=blue0+dx*blueX+dy*blueY;
+          for(let x=start;x<=end;x++,px++,q+=qx,f+=fx,g+=gx,u+=ux,v+=vx,blue+=blueX){
             if(q+depthBias<depth[px]-.00000009)continue;
             let r=color[0],gg=color[1],b=color[2],alpha=opacity;
             if(tex){
@@ -390,7 +427,8 @@ export function createSimSoftware(canvas,THREE){
               r*=tex.data[at]/255;gg*=tex.data[at+1]/255;b*=tex.data[at+2]/255;alpha*=tex.data[at+3]/255;
               if(alpha<.13)continue;
             }
-            r=r*f+.95*g;gg=gg*f+g;b=b*f+1.06*g;
+            if(shade){r=f;gg=g;b=blue;}
+            else {r=r*f+.95*g;gg=gg*f+g;b=b*f+1.06*g;}
             if(roadFill){
               const dist=1/q,wx=u*dist,wz=v*dist;
               if(roadGrain){
@@ -399,12 +437,15 @@ export function createSimSoftware(canvas,THREE){
                 const texture=(grain[(gz<<8)+gx]*.62+coarse*.38)*clamp((26-dist)/20,0,1);
                 r+=texture;gg+=texture;b+=texture;
               }
-              if(!farGround && Math.abs(wx)<1.9 && Math.abs(wz)<3.4){
-                const bx=(wx-.10)/1.38,bz=(wz+.12)/2.86;
+              if(!farGround && Math.abs(wx)<shadowW+.5 && Math.abs(wz)<shadowL+.55){
+                const bx=(wx-.10)/shadowW,bz=(wz+.12)/shadowL;
                 let broad=clamp(1-bx*bx-bz*bz,0,1);
                 broad=broad*broad*(3-2*broad);
                 let shade=broad*(cutaway?.21:.47)*carLoad;
-                const dx=(Math.abs(wx)-.809)/.38,axle=wz>0?FRONT:REAR,dz=(wz-axle)/.44;
+                const front=wz>(frontZ+rearZ)*.5,axle=front?frontZ:rearZ;
+                const track=(front?geo.frontTrack:geo.rearTrack)??1.618;
+                const radius=(front?geo.frontWheelRadius:geo.rearWheelRadius)??WHEEL;
+                const dx=(Math.abs(wx)-track*.5)/(radius*.94),dz=(wz-axle)/(radius*1.09);
                 if(!(cutaway&&wx<0)){
                   let tire=clamp(1-dx*dx-dz*dz,0,1);
                   shade+=tire*tire*(wz>0?frontLoad:rearLoad)*.46;

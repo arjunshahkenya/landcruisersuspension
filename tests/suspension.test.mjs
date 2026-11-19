@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { getVehicle, VEHICLES } from '../vehicle-specs.js';
 import { DEFAULTS, GEOMETRY, LIMITS, roadHeight, sampleAt, simulate } from '../sim-physics.js';
 
 const g = 9.80665;
@@ -136,7 +137,7 @@ test('sampling is repeatable, bounds time and handles interpolated states', () =
   assert.deepEqual(repeated.samples[212], standard.samples[212]);
   assert.strictEqual(sampleAt(standard, -10), standard.samples[0]);
   assert.strictEqual(sampleAt(standard, Infinity), standard.samples.at(-1));
-  const i = 149, first = standard.samples[i], second = standard.samples[i+1];
+  const i = Math.floor(standard.events.frontEnter*standard.sampleHz)+12, first = standard.samples[i], second = standard.samples[i+1];
   const middle = sampleAt(standard, (first.t + second.t) / 2);
   near(middle.body, (first.body + second.body) / 2);
   near(middle.frontRoad, roadHeight(middle.x, standard.settings));
@@ -152,4 +153,65 @@ test('invalid or out-of-range controls produce a finite bounded run', () => {
   assert.equal(run.settings.weight, DEFAULTS.weight);
   assert.equal(run.settings.bumpHeight, 0);
   assert.equal(simulate({ speed: .00001 }).settings.speed, 1);
+});
+
+test('vehicle-specific geometry, static axle loads, spring balance and bump timing agree', () => {
+  const accelerations=[];
+  for(const spec of Object.values(VEHICLES)){
+    const r=simulate({vehicle:spec.id}),s=r.static,v=r.settings.speed/3.6;
+    assert.strictEqual(r.vehicle,spec);
+    assert.deepEqual(r.settings,spec.defaults);
+    assert.equal(r.termination,null);
+    near(s.body,0); near(s.pitch,0);
+    near(s.frontNormal+s.rearNormal,spec.referenceMass*g);
+    const sprung=spec.referenceMass-spec.front.unsprungMass-spec.rear.unsprungMass;
+    near(s.frontNormal,(sprung*spec.sprungFrontFraction+spec.front.unsprungMass)*g);
+    near(s.frontSpringCompression,sprung*g*spec.sprungFrontFraction/(2000*spec.front.wheelRate));
+    near(r.events.rearEnter-r.events.frontEnter,spec.geometry.wheelbase/v);
+    near(r.events.frontEnter,.85);
+    assert.ok(-r.startX>spec.underside[0][0]+spec.geometry.frontWheelRadius);
+    near(s.frontTireDeflection,s.frontNormal/(2000*spec.front.tireRate));
+    near(s.rearTireDeflection,s.rearNormal/(2000*spec.rear.tireRate));
+    near(sampleAt(r,(r.events.rearEnter+r.events.rearExit)/2).rearRoad,.085);
+    accelerations.push(r.stats.peakAccel);
+  }
+  assert.equal(new Set(accelerations.map(a=>a.toFixed(2))).size,4);
+  assert.strictEqual(simulate({vehicle:'missing'}).vehicle,getVehicle('landcruiser'));
+});
+
+test('gravel crest can unload tires and the modeled vehicle lands and settles', () => {
+  for(const spec of Object.values(VEHICLES)){
+    const r=simulate({...spec.defaults,speed:spec.id==='landcruiser'?60:65,
+      bumpHeight:spec.id==='landcruiser'?160:120,bumpWidth:4});
+    assert.ok(r.stats.frontAirTime>.02 && r.stats.rearAirTime>.02);
+    assert.equal(r.termination,null);
+    const last=r.samples.at(-1);
+    assert.ok(last.frontContact && last.rearContact && Math.abs(last.heave)<.0015);
+  }
+});
+
+test('solid one-metre obstacle stops the run at first body contact, including before a wheel reaches it',()=>{
+  for(const spec of Object.values(VEHICLES)){
+    const r=simulate({vehicle:spec.id,speed:spec.limits.speed.max,bumpWidth:.4,bumpHeight:1000});
+    assert.equal(r.termination.reason,'body-strike');
+    assert.ok(r.duration<r.events.frontEnter);
+    assert.ok(r.termination.time>0);
+    near(r.termination.time,r.duration); near(r.samples.at(-1).t,r.duration);
+    near(sampleAt(r,Infinity).x,sampleAt(r,r.duration).x);
+    near(r.stats.maxBodyRise,0);
+  }
+});
+
+test('maximum width and height with minimum and maximum load keep motion finite across vehicle envelopes',()=>{
+  for(const spec of Object.values(VEHICLES))for(const end of ['max','min']){
+    const lim=spec.limits;
+    const r=simulate({vehicle:spec.id,speed:lim.speed.max,bumpWidth:lim.bumpWidth.max,
+      bumpHeight:lim.bumpHeight.max,stiffness:lim.stiffness[end],weight:lim.weight[end]});
+    for(const s of r.samples){
+      assert.ok(Object.values(s).every(v=>typeof v!=='number'||Number.isFinite(v)));
+      assert.ok(s.frontNormal>=0 && s.rearNormal>=0);
+    }
+    assert.ok(r.stats.peakPitch<.80 && r.stats.maxBodyRise<15);
+    assert.ok(r.duration<=r.events.rearExit+10);
+  }
 });

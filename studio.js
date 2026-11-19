@@ -22,7 +22,7 @@ export function reflectionEnvironment(renderer) {
   return environment.texture;
 }
 
-export function lightStudio(scene, renderer) {
+export function lightStudio(scene, renderer, dimensions=null) {
   if(renderer) {
     scene.environment=reflectionEnvironment(renderer);
     renderer.shadowMap.enabled=true;
@@ -38,7 +38,8 @@ export function lightStudio(scene, renderer) {
     key.castShadow=true;
     key.shadow.mapSize.set(2048,2048);
     const c=key.shadow.camera;
-    c.left=-3.6;c.right=3.6;c.bottom=-2.9;c.top=3.1;c.near=.4;c.far=14;c.updateProjectionMatrix();
+    const size=Math.max(1,(dimensions?.length || 4.89)/4.89);
+    c.left=-3.6*size;c.right=3.6*size;c.bottom=-2.9*size;c.top=3.1*size;c.near=.4;c.far=14*size;c.updateProjectionMatrix();
     key.shadow.bias=-.00016;key.shadow.normalBias=.012;
   }
   softbox(0xd2e5ff,.78,4.2,2.1,-3.6);
@@ -60,14 +61,20 @@ export function lightStudio(scene, renderer) {
   // belongs to the raised body, while the tight dark marks belong to the tires.
   shadow(208,317,153,285,.36);
   shadow(192,318,113,228,.23);
-  for(const x of [120,280]) for(const y of [188,453]){
-    shadow(x,y,32,42,.35);
-    shadow(x,y,15,17,.71);
+  const floorWidth=dimensions ? dimensions.width*2.08 : 4;
+  const floorLength=dimensions ? dimensions.length*1.41 : 6.9;
+  const footprints=dimensions
+    ? [[dimensions.frontTrack,dimensions.frontAxleZ],[dimensions.rearTrack,dimensions.rearAxleZ]]
+    : [[1.60,1.43],[1.60,-1.43]];
+  for(const [track,axle] of footprints)for(const side of [-1,1]){
+    const x=(.5+side*track/(2*floorWidth))*canvas.width;
+    const y=(.5+axle/floorLength)*canvas.height;
+    shadow(x,y,32,42,.35); shadow(x,y,15,17,.71);
   }
   const map=new THREE.CanvasTexture(canvas);
   map.colorSpace=THREE.SRGBColorSpace;
   const material=new THREE.MeshBasicMaterial({map,transparent:true,depthWrite:false,toneMapped:false});
-  const ground=new THREE.Mesh(new THREE.PlaneGeometry(4,6.9),material);
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(floorWidth,floorLength),material);
   ground.name='Feathered contact shadows';
   ground.rotation.x=-Math.PI/2;ground.position.y=-.008;scene.add(ground);
   let configured=false, isolated=null;

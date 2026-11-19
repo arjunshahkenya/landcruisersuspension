@@ -178,7 +178,7 @@ export function buildTestRoad(T, scene) {
       if(!visible || !sample || !run)return;
       const settings=run.settings||DEFAULTS;
       setProfile(settings);
-      const offset=frontAxle-sample.x;
+      const offset=(run.geometry?.frontAxleZ ?? frontAxle)-sample.x;
       bumpGroup.position.z=offset;
       bumpGroup.visible=settings.bumpHeight>0 && offset<trackReach && offset+settings.bumpWidth>-trackReach;
       asphalt.offset.y=repeat(-offset/trackPeriod);

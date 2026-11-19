@@ -1,9 +1,10 @@
 import * as THREE from './vendor/three.module.js';
 import { OrbitControls } from './vendor/OrbitControls.js';
+import { getVehicle } from './vehicle-specs.js';
 
-async function createHardware(canvas, context) {
-  const [{buildSimRig}, {buildTestRoad}, {reflectionEnvironment}] = await Promise.all([
-    import('./sim-rig.js'), import('./sim-road.js'), import('./studio.js')
+async function createHardware(canvas, context, fleetRig, spec) {
+  const [{buildTestRoad}, {reflectionEnvironment}] = await Promise.all([
+    import('./sim-road.js'), import('./studio.js')
   ]);
   const renderer = new THREE.WebGLRenderer({canvas,context,alpha:true,antialias:true,powerPreference:'high-performance'});
   renderer.setClearColor(0x182e28,0);
@@ -23,7 +24,8 @@ async function createHardware(canvas, context) {
   sun.position.set(-5,8,4);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024,1024);
-  Object.assign(sun.shadow.camera,{left:-5.5,right:5.5,top:5,bottom:-5,near:.1,far:23});
+  const shadowSpan=Math.max(5.5,spec.geometry.length*.86);
+  Object.assign(sun.shadow.camera,{left:-shadowSpan,right:shadowSpan,top:shadowSpan,bottom:-shadowSpan,near:.1,far:27});
   sun.shadow.camera.updateProjectionMatrix();
   sun.shadow.normalBias = .016;
   sun.shadow.bias = -.00012;
@@ -39,7 +41,8 @@ async function createHardware(canvas, context) {
   const loaded=new Promise(resolve=>{done=resolve;});
   manager.onStart=()=>{waiting=true;};
   manager.onLoad=done;
-  const rig = buildSimRig(THREE);
+  const rig = fleetRig ?? (await import('./sim-rig.js')).buildSimRig(THREE);
+  const updateTires=fleetRig ? (await import('./fleet-tires.js')).attachFleetTires(THREE,rig) : null;
   scene.add(rig.group);
   rig.group.traverse(p=>{
     if (!p.isMesh) return;
@@ -56,6 +59,7 @@ async function createHardware(canvas, context) {
     draw(camera,sample,run,cutaway){
       if(lastCutaway!==cutaway){rig.setCutaway(cutaway);lastCutaway=cutaway;}
       rig.update(sample,run);
+      updateTires?.(sample,run);
       road.update(sample,run,camera.position.y>.055);
       underLight.intensity=camera.position.y<.15 ? 2.1 : cutaway ? 1.15 : .32;
       renderer.render(scene,camera);
@@ -64,18 +68,20 @@ async function createHardware(canvas, context) {
 }
 
 // Camera and controls are shared by the WebGL and software 3D renderers.
-export async function createSimView(originalCanvas, {onDirty, onFreeOrbit}) {
+export async function createSimView(originalCanvas, {onDirty, onFreeOrbit, vehicleId}) {
+  const spec=getVehicle(vehicleId), geo=spec.geometry;
+  const fleetRig=spec.id==='landcruiser' ? null : (await import('./fleet-rig.js')).buildFleetVehicle(THREE,spec.id);
   let canvas=originalCanvas, surface;
   async function software(){
     const {createSimSoftware}=await import('./sim-software.js');
-    surface=await createSimSoftware(canvas,THREE);
+    surface=await createSimSoftware(canvas,THREE,fleetRig);
   }
   const options={alpha:true,antialias:true,powerPreference:'high-performance'};
   let context;
   try { context=canvas.getContext('webgl2',options) || canvas.getContext('webgl',options); }
   catch { context=null; }
   if(context){
-    try { surface=await createHardware(canvas,context); }
+    try { surface=await createHardware(canvas,context,fleetRig,spec); }
     catch(error) {
       console.warn('Using software 3D',error);
       const replacement=canvas.cloneNode(false);canvas.replaceWith(replacement);canvas=replacement;
@@ -84,19 +90,27 @@ export async function createSimView(originalCanvas, {onDirty, onFreeOrbit}) {
   } else await software();
   const camera=new THREE.PerspectiveCamera(34,1,.045,160);
   const controls=new OrbitControls(camera,canvas);
-  controls.enablePan=false;controls.minDistance=2.2;controls.maxDistance=20;
+  controls.enablePan=false;controls.minDistance=fleetRig ? .8 : 2.2;controls.maxDistance=Math.max(20,geo.length*4);
   controls.minPolarAngle=.012;controls.maxPolarAngle=Math.PI-.012;
   controls.rotateSpeed=.73;controls.zoomSpeed=.88;
-  let preset='orbit',w=1,h=1,targetCutaway=false;
+  let preset='orbit',w=1,h=1,targetCutaway=false,followHeight=0;
   const directions={orbit:[-1,.31,.57],side:[-1,.11,.003],front:[-.012,.31,1],under:[-.38,-1,.22],frontAxle:[-1,.12,.52],rearAxle:[-1,.17,-.48]};
   function place(mode){
-    const dir=new THREE.Vector3(...directions[mode]).normalize();
     const axle=mode==='frontAxle'||mode==='rearAxle';
-    const distanceByHeight=axle?2.8:mode==='under'?5.9:mode==='front'?5.5:6.6;
-    const span=axle?2.95:mode==='front'?4.25:mode==='under'?6.05:mode==='orbit'?8.55:7.4;
+    const corner=axle&&fleetRig;
+    fleetRig?.setInspection(axle ? mode : '');
+    const direction=corner?[-1,.49,mode==='frontAxle'?.76:-.76]:directions[mode];
+    const dir=new THREE.Vector3(...direction).normalize();
+    const scale=geo.length/4.89, tall=geo.height/1.86, wide=geo.width/1.94;
+    const front=mode==='frontAxle', radius=front?geo.frontWheelRadius:geo.rearWheelRadius;
+    const axScale=.55*radius/.405+.45*wide;
+    const distanceByHeight=corner?(spec.id==='dakar'?2.56:1.52):axle?2.8*axScale:mode==='under'?5.9*scale:mode==='front'?5.5*Math.max(wide,tall):6.6*Math.max(scale,tall);
+    const span=corner?(spec.id==='dakar'?2.56:1.55):axle?2.95*axScale:mode==='front'?4.25*wide:mode==='under'?6.05*scale:mode==='orbit'?8.55*scale:7.4*scale;
     const distance=Math.max(distanceByHeight,span/(2*Math.tan(THREE.MathUtils.degToRad(17))*camera.aspect));
-    if(axle) controls.target.set(-.22,.47,mode==='frontAxle'?1.30:-1.39);
-    else controls.target.set(0,mode==='under'?.5:.81,mode==='orbit'?.87:mode==='side'?.52:0);
+    if(corner)controls.target.copy(fleetRig.targets[mode]);
+    else if(axle) controls.target.set(-.22*wide,1.16*radius,(front?geo.frontAxleZ:geo.rearAxleZ)+(front?-.12:.04)*scale);
+    else controls.target.set(0,(mode==='under'?.5:.81)*tall,(mode==='orbit'?.87:mode==='side'?.52:0)*scale);
+    controls.target.y+=followHeight;
     camera.position.copy(controls.target).addScaledVector(dir,distance);
     controls.update();
     camera.updateMatrixWorld(true);
@@ -117,7 +131,7 @@ export async function createSimView(originalCanvas, {onDirty, onFreeOrbit}) {
   const observer=new ResizeObserver(resize);
   observer.observe(canvas);
   controls.addEventListener('change',onDirty);
-  function free(){preset='';onFreeOrbit();}
+  function free(){preset='';fleetRig?.setInspection('');onFreeOrbit();}
   controls.addEventListener('start',free);
   canvas.addEventListener('keydown',event=>{
     const offset=camera.position.clone().sub(controls.target);
@@ -139,7 +153,18 @@ export async function createSimView(originalCanvas, {onDirty, onFreeOrbit}) {
   });
   resize();
   return {
-    draw(sample,run){camera.updateMatrixWorld(true);surface.draw(camera,sample,run,targetCutaway);},
+    draw(sample,run){
+      // Normal wheel travel stays visible against a stationary track. During
+      // unusually large bump events, keep the selected axle or body in frame.
+      const tracked=preset==='frontAxle'?sample.frontWheel:preset==='rearAxle'?sample.rearWheel:sample.body*.72;
+      const close=fleetRig&&(preset==='frontAxle'||preset==='rearAxle');
+      const axleBody=preset==='frontAxle'?run.geometry.frontArm:-run.geometry.rearArm;
+      const strutMotion=.52*tracked+.48*(sample.body+Math.sin(sample.pitch)*axleBody);
+      const rise=close?strutMotion:Math.max(0,tracked-.12*geo.height);
+      const offset=rise-followHeight;
+      if(offset){camera.position.y+=offset;controls.target.y+=offset;followHeight=rise;}
+      camera.updateMatrixWorld(true);surface.draw(camera,sample,run,targetCutaway);
+    },
     setCutaway(value){targetCutaway=value;onDirty();},
     setCamera(mode){if(Object.hasOwn(directions,mode)){preset=mode;place(mode);}}
   };

@@ -1,3 +1,5 @@
+import {setupVehiclePicker, vehicleFromLocation} from './vehicle-picker.js';
+
 const $ = id => document.getElementById(id);
 const canvas = $('model-canvas');
 const stage = $('stage');
@@ -6,6 +8,22 @@ const dialog = $('controls-dialog');
 const presets = [...document.querySelectorAll('[data-view]')];
 const detailMenu = $('select-detail');
 const parts = [...document.querySelectorAll('[data-part]')];
+const spec=vehicleFromLocation();
+const picker=setupVehiclePicker(spec);
+const cruiser=spec.id==='landcruiser';
+const g=spec.geometry;
+$('vehicle-make').textContent=picker.label.make.toUpperCase();
+$('vehicle-variant').textContent=picker.label.variant.toUpperCase();
+$('vehicle-name').textContent=picker.label.card;
+document.title=spec.name+' · 3D viewer';
+canvas.setAttribute('aria-label','Interactive 3D model of the '+spec.name+'. Drag or use the arrow keys to orbit.');
+document.querySelector('.registration').hidden=!cruiser;
+$('preset-note').textContent=spec.suspension;
+if(!cruiser){
+  const third=spec.id==='rally'?'Rear wing':spec.id==='dakar'?'Rally cab':'Rear engine cover';
+  detailMenu.replaceChildren(...[['','Inspect a detail'],['bumper','Front bodywork'],['wheel','Front wheel'],['feature',third]].map(([value,label])=>new Option(label,value)));
+  parts.find(b=>b.dataset.part==='rear-axle').textContent='Rear suspension';
+}
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
 $('controls-open').onclick = () => dialog.showModal();
 $('controls-close').onclick = () => dialog.close();
@@ -53,9 +71,9 @@ function showFallback(error) {
 
 // Let the shell and loading status paint before constructing the geometry.
 async function start() {
-  const [THREE, {OrbitControls}, {vehicle}, {lightStudio}] = await Promise.all([
+  const [THREE, {OrbitControls}, assembly, {lightStudio}] = await Promise.all([
     import('./vendor/three.module.js'), import('./vendor/OrbitControls.js'),
-    import('./layers.js'), import('./studio.js')
+    cruiser ? import('./layers.js') : import('./fleet-rig.js'), import('./studio.js')
   ]);
   const options = {alpha:true, antialias:true, powerPreference:'high-performance'};
   const context = canvas.getContext('webgl2', options) || canvas.getContext('webgl', options);
@@ -76,8 +94,8 @@ async function start() {
   controls.rotateSpeed = .70;
   controls.zoomSpeed = .84;
   controls.minDistance = .39;
-  controls.maxDistance = 22;
-  controls.maxTargetRadius = 3.25;
+  controls.maxDistance = Math.max(22,g.length*4.6);
+  controls.maxTargetRadius = Math.max(3.25,g.length*.75);
   controls.autoRotateSpeed = .9;
   controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
   controls.cursor.set(0,.92,0);
@@ -88,8 +106,8 @@ async function start() {
   const materialsLoaded = new Promise(resolve => { finishMaterials = resolve; });
   manager.onStart = () => { pendingMaps = true; };
   manager.onLoad = finishMaterials;
-  const lighting = lightStudio(scene,context ? renderer : null);
-  const model = vehicle();
+  const lighting = lightStudio(scene,context ? renderer : null,cruiser?null:g);
+  const model = cruiser ? assembly.vehicle() : assembly.buildFleetVehicle(THREE,spec.id);
   if (pendingMaps) await materialsLoaded;
   manager.onStart = undefined;
   scene.add(model.group);
@@ -101,13 +119,21 @@ async function start() {
     overview: [-.847,.101,1], front: [0,.012,1], side: [-1,.12,.0001],
     rear:[0,.018,-1], roof:[-.001,1,.00001], underbody:[-.055,-1,.003]
   };
-  const closeups = {
+  const closeups = cruiser ? {
     bumper: {target:[0,.84,2.26], dir:[-.45,.24,1], distance:3.35},
     wheel: {target:[-.8,.44,1.42], dir:[-1,.14,.45], distance:2.24},
     rack: {target:[0,1.95,-1.12], dir:[-.92,.65,.72], distance:4.30},
     spare: {target:[-.455,1.03,-2.70], dir:[-.32,.17,-1], distance:2.7},
     'front-suspension': {target:[0,.43,1.35], dir:[-.38,-1,.44], distance:3.5, mechanical:true},
     'rear-axle': {target:[0,.43,-1.41], dir:[-.34,-1,-.38], distance:3.4, mechanical:true}
+  } : {
+    bumper:{target:[0,g.height*.42,g.length*.44],dir:[-.58,.24,1],distance:g.width*1.65},
+    wheel:{target:[-g.frontTrack/2,g.frontWheelRadius,g.frontAxleZ],dir:[-1,.18,.39],distance:g.frontWheelRadius*5.5},
+    feature: spec.id==='dakar'
+      ? {target:[0,g.height*.68,g.frontAxleZ*.52],dir:[-.83,.24,1],distance:g.width*2.4}
+      : {target:[0,g.height*(spec.id==='rally'?.86:.64),-g.length*.36],dir:[-.68,.41,-1],distance:g.width*1.8},
+    'front-suspension':{target:[-g.frontTrack*.22,g.frontWheelRadius,g.frontAxleZ],dir:[-.76,-.55,.45],distance:g.width*1.65,mechanical:true},
+    'rear-axle':{target:[-g.rearTrack*.22,g.rearWheelRadius,g.rearAxleZ],dir:[-.76,-.55,-.45],distance:g.width*1.65,mechanical:true}
   };
   const titles = Object.fromEntries([
     ...[...presets, ...parts].map(b => [b.dataset.view || b.dataset.part, b.textContent.trim()]),
@@ -125,10 +151,21 @@ async function start() {
     if (detail) url.searchParams.set('detail',detail);
     else if (active && active !== 'overview') url.searchParams.set('view',active);
     if (location.protocol.startsWith('http')) history.replaceState(null,'',url);
+    picker.updateLinks();
   }
   const V = (x,y,z) => new THREE.Vector3(x,y,z);
   const pts = [];
-  for (const sign of [-1,1]) {
+  if(!cruiser){
+    model.group.updateMatrixWorld(true);
+    model.group.traverse(obj=>{
+      if(!obj.isMesh)return;
+      if(!obj.geometry.boundingBox)obj.geometry.computeBoundingBox();
+      const box=obj.geometry.boundingBox;
+      for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){
+        pts.push(V(x,y,z).applyMatrix4(obj.matrixWorld));
+      }
+    });
+  }else for (const sign of [-1,1]) {
     for (const z of [-2.58,2.49]) {
       pts.push(V(sign*.97,.52,z),V(sign*.93,1.2,z));
     }
@@ -137,8 +174,10 @@ async function start() {
     for (const z of [-1.43,1.42]) pts.push(V(sign*.94,.018,z),V(sign*.94,.405,z-.405),V(sign*.94,.405,z+.405));
   }
   // The centre of the custom steel bumper projects beyond its swept wings.
-  for (const sign of [-1,1]) pts.push(V(sign*.32,.86,2.70),V(sign*.32,.62,2.65));
-  pts.push(V(-.85,1.03,-2.78),V(-.06,1.03,-2.78),V(-.455,1.42,-2.78),V(-.455,.63,-2.78));
+  if(cruiser){
+    for (const sign of [-1,1]) pts.push(V(sign*.32,.86,2.70),V(sign*.32,.62,2.65));
+    pts.push(V(-.85,1.03,-2.78),V(-.06,1.03,-2.78),V(-.455,1.42,-2.78),V(-.455,.63,-2.78));
+  }
   function frame(direction, target) {
     const right = new THREE.Vector3().crossVectors(camera.up,direction).normalize();
     const up = new THREE.Vector3().crossVectors(direction,right);
@@ -153,7 +192,7 @@ async function start() {
   }
   function desired() {
     const d = closeups[detail];
-    const target = d ? V(...d.target) : V(0,active === 'underbody' ? .56 : .94,-.045);
+    const target = d ? V(...d.target) : V(0,active === 'underbody' ? g.height*.30 : g.height*.505,-.045);
     const dir = V(...(d ? d.dir : pose[active] || pose.overview)).normalize();
     const distance = d ? d.distance*Math.max(1,1.3/camera.aspect) : frame(dir,target);
     return {target, dir, distance};
@@ -199,12 +238,22 @@ async function start() {
     label.textContent = titles[detail || active] || '';
     label.hidden = !label.textContent || active === 'overview';
     stage.classList.toggle('inspection-view',active !== 'overview');
+    const drive=new URL($('drive-suspension').getAttribute('href'),location.href);
+    drive.search='';drive.searchParams.set('vehicle',spec.id);drive.searchParams.set('cutaway','1');
+    drive.searchParams.set('camera',detail==='rear-axle'?'rearAxle':'frontAxle');
+    $('drive-suspension').href=drive.href;
+  }
+  function isolate(value){
+    isolated=value;
+    if(model.setCutaway)model.setCutaway(value);
+    else model.exterior.visible=!value;
+    dirty=true;
   }
   function select(view, feature='', instant=false) {
     setOrbit(false);
     detail = feature; active = view;
     inspection = view === 'underbody';
-    isolated = false; model.exterior.visible=true;
+    isolate(!!closeups[feature]?.mechanical);
     reflect(); rememberView(); animateTo(desired(), instant);
   }
   function clearSelection() {
@@ -220,6 +269,7 @@ async function start() {
   presets.forEach(b => b.onclick = () => select(b.dataset.view));
   parts.forEach(b => b.onclick = () => {
     setOrbit(false); active = 'underbody'; detail = b.dataset.part;
+    isolate(true);
     reflect(); rememberView(); animateTo(desired());
   });
   detailMenu.onchange = () => {
@@ -231,9 +281,7 @@ async function start() {
   $('reset-view').onclick = () => select('overview');
   $('toggle-orbit').onclick = () => {tween=null; setOrbit(!controls.autoRotate); if(controls.autoRotate) clearSelection();};
   $('chassis-toggle').onclick = () => {
-    isolated = !isolated;
-    model.exterior.visible = !isolated;
-    dirty = true;
+    isolate(!isolated);
     reflect();
   };
   controls.addEventListener('change', () => {dirty = true;});
@@ -276,6 +324,7 @@ async function start() {
   THREE.DefaultLoadingManager.onLoad = () => {dirty=true;};
   canvas.addEventListener('webglcontextlost', e => {e.preventDefault(); $('stage-status').textContent='Restoring 3D viewer…'; $('stage-status').hidden=false;});
   canvas.addEventListener('webglcontextrestored', () => location.reload());
+  if(closeups[detail]?.mechanical)isolate(true);
   resize(); reflect();
   function haveFrame() {
     $('stage-status').hidden = true;

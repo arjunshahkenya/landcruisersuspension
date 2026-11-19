@@ -30,3 +30,9 @@
 }
 .stage-tools select{max-width:150px}
 @media(max-width:510px){.stage-tools select{max-width:130px}}
+.travel-monitor{padding:10px clamp(13px,1.55vw,23px);border-bottom:1px solid #d7e1d7;background:#f1f6ef;display:flex;align-items:center;flex-wrap:wrap;gap:7px 16px}
+.travel-monitor p{font-size:.79rem;color:#3d5545;line-height:1.4;margin:0;flex:1 1 210px}
+.travel-values{display:flex;gap:13px;font-size:.74rem;color:#495e50;flex-wrap:wrap}
+.travel-values b{font-variant-numeric:tabular-nums;color:#203e2b}
+.peak-travel{border:1px solid #b5c7ba;border-radius:6px;background:#fcfefa;color:#284b35;padding:5px 9px;min-height:32px;font-size:.76rem;font-weight:620}
+.impact-note{margin:0;padding:9px clamp(13px,1.55vw,23px);font-size:.84rem;color:#664b25;background:#fcf1dd;border-bottom:1px solid #e9d0a3}
