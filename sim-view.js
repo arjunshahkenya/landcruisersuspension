@@ -93,9 +93,10 @@ export async function createSimView(originalCanvas, {onDirty, onFreeOrbit, vehic
   controls.enablePan=false;controls.minDistance=fleetRig ? .8 : 2.2;controls.maxDistance=Math.max(20,geo.length*4);
   controls.minPolarAngle=.012;controls.maxPolarAngle=Math.PI-.012;
   controls.rotateSpeed=.73;controls.zoomSpeed=.88;
-  let preset='orbit',w=1,h=1,targetCutaway=false,followHeight=0;
+  let preset='orbit',followMode='orbit',w=1,h=1,targetCutaway=false,followHeight=0;
   const directions={orbit:[-1,.31,.57],side:[-1,.11,.003],front:[-.012,.31,1],under:[-.38,-1,.22],frontAxle:[-1,.12,.52],rearAxle:[-1,.17,-.48]};
   function place(mode){
+    followMode=mode;
     const axle=mode==='frontAxle'||mode==='rearAxle';
     const corner=axle&&fleetRig;
     fleetRig?.setInspection(axle ? mode : '');
@@ -131,7 +132,9 @@ export async function createSimView(originalCanvas, {onDirty, onFreeOrbit, vehic
   const observer=new ResizeObserver(resize);
   observer.observe(canvas);
   controls.addEventListener('change',onDirty);
-  function free(){preset='';fleetRig?.setInspection('');onFreeOrbit();}
+  // Free orbit keeps the current inspection point on a moving spring. An
+  // explicit camera change establishes a new pivot and restores hidden brakes.
+  function free(){preset='';onFreeOrbit();}
   controls.addEventListener('start',free);
   canvas.addEventListener('keydown',event=>{
     const offset=camera.position.clone().sub(controls.target);
@@ -156,9 +159,9 @@ export async function createSimView(originalCanvas, {onDirty, onFreeOrbit, vehic
     draw(sample,run){
       // Normal wheel travel stays visible against a stationary track. During
       // unusually large bump events, keep the selected axle or body in frame.
-      const tracked=preset==='frontAxle'?sample.frontWheel:preset==='rearAxle'?sample.rearWheel:sample.body*.72;
-      const close=fleetRig&&(preset==='frontAxle'||preset==='rearAxle');
-      const axleBody=preset==='frontAxle'?run.geometry.frontArm:-run.geometry.rearArm;
+      const tracked=followMode==='frontAxle'?sample.frontWheel:followMode==='rearAxle'?sample.rearWheel:sample.body*.72;
+      const close=fleetRig&&(followMode==='frontAxle'||followMode==='rearAxle');
+      const axleBody=followMode==='frontAxle'?run.geometry.frontArm:-run.geometry.rearArm;
       const strutMotion=.52*tracked+.48*(sample.body+Math.sin(sample.pitch)*axleBody);
       const rise=close?strutMotion:Math.max(0,tracked-.12*geo.height);
       const offset=rise-followHeight;
