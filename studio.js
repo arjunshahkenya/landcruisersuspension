@@ -1,7 +1,7 @@
 import * as THREE from './vendor/three.module.js';
 import { skyRadiance } from './software-shading.js';
 
-function reflectionEnvironment(renderer) {
+export function reflectionEnvironment(renderer) {
   const width=512, height=256, pixels=new Float32Array(width*height*4), radiance=[0,0,0];
   for(let row=0;row<height;row++) {
     const elevation=((row+.5)/height-.5)*Math.PI;

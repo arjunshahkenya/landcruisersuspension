@@ -9,7 +9,7 @@ import { buildChassis } from './model/chassis.js';
 
 // Each rigid assembly can be batched independently, so the viewer can still
 // isolate the running gear. Keep transparent surfaces separate for depth sorting.
-function batch(group) {
+export function batch(group) {
   group.updateMatrixWorld(true);
   const buckets = new Map();
   group.traverse(part => {

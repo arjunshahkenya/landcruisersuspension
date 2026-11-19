@@ -1,7 +1,7 @@
 // Representative UZJ100 running gear. Coordinates are in metres.
 // Toyota New Car Features NCF147E: independent torsion-bar front suspension,
 // four-link coil-sprung live rear axle and lateral locating rod.
-export function buildChassis(THREE) {
+export function buildChassis(THREE, { articulate = false } = {}) {
   const group = new THREE.Group();
   group.name = 'Land Cruiser • chassis and running gear';
   const material = (name, color, roughness, metalness) =>
@@ -24,7 +24,16 @@ export function buildChassis(THREE) {
 
   // Accumulate transformed static geometry by material. The wheel wells have
   // many visible pieces (clips, joints and hardware), with one draw per finish.
-  const batches = new Map();
+  const assemblies = new Map();
+  let batches;
+  // The static viewer retains one batch per finish. The ride simulator can
+  // request the same meshes split at real pivots and attachment points.
+  function member(name) {
+    const key=articulate ? name : 'fixed';
+    if(!assemblies.has(key))assemblies.set(key,new Map());
+    batches=assemblies.get(key);
+  }
+  member('sprung');
   function place(geometry, surface, centre = [0, 0, 0], quaternion, scale) {
     const matrix = new THREE.Matrix4().compose(v(centre), quaternion || new THREE.Quaternion(), v(scale || [1, 1, 1]));
     geometry.applyMatrix4(matrix);
@@ -90,12 +99,15 @@ export function buildChassis(THREE) {
     shaft(end(-width*.57),end(width*.57),radius*.41,fastener, 8);
     shaft(end(-width*.65),end(-width*.57),radius*.58,fastener, 6);
   }
-  function shock(a,b) {
+  function shock(a,b,prefix) {
+    member(prefix+'-rod');
     shaft(at(a,b,.08),at(a,b,.9),.013,stainless);
+    member(prefix+'-case');
     shaft(at(a,b,.26),at(a,b,.88),.028,damper,16);
     shaft(at(a,b,.82),at(a,b,.91),.030,frame,16);
     shaft(at(a,b,.20),at(a,b,.28),.031,rubber,16);
     for (const point of [a,b]) {
+      member(prefix+(point===a?'-rod':'-case'));
       shaft([point[0]-.038,point[1],point[2]],[point[0]+.038,point[1],point[2]],.032,damper);
       bush(point, [1,0,0], .021,.085);
     }
@@ -103,12 +115,14 @@ export function buildChassis(THREE) {
 
   // Stamped floor with a raised transmission tunnel. Rear and front floors
   // narrow between the inner wheel housings; scalloped side footwells fill the sills.
+  member('floor');
   stamping([
     [0,.768,-2.24,1.56,.07],[0,.768,-1.94,1.56,.09],[0,.827,-1.77,1.13,.07],
     [0,.827,-1.14,1.13,.07],[0,.752,-.94,1.55,.07],[0,.736,-.41,1.56,.07],
     [0,.737,.65,1.56,.07],[0,.780,.97,1.24,.06],[0,.85,1.08,1.03,.06]
   ],floor,.026);
   for(const s of [-1,1]) {
+    member('floor');
     for (const x of [.35,.43,.51,.59,.67]) {
       stamping([[x*s,.707,-.87,.028,.020],[x*s,.691,-.72,.044,.024],
         [x*s,.691,.57,.044,.024],[x*s,.707,.68,.027,.019]],bracket,.009);
@@ -117,6 +131,7 @@ export function buildChassis(THREE) {
       stamping([[s*x,.727,-2.17,.026,.016],[s*x,.715,-2.10,.04,.02],
         [s*x,.715,-1.99,.04,.02],[s*x,.726,-1.94,.025,.016]],bracket,.008);
     }
+    member('sprung');
     stamping([[-2.25,.505,.554,.108,.134],[-2.04,.505,.56,.115,.152],[-1.78,.52,.636,.117,.155],
       [-1.53,.52,.675,.117,.156],[-1.29,.53,.668,.12,.159],[-1.01,.543,.58,.122,.165],
       [-.76,.548,.504,.122,.170],[.36,.544,.497,.122,.169],[.73,.499,.494,.123,.168],
@@ -161,6 +176,7 @@ export function buildChassis(THREE) {
   shaft([-.34,.423,1.42],[.41,.423,1.42],.055,cast);
   for (const s of [-1,1]) {
     const joint=[s*.729,.405,1.42],inner=[s*.342,.423,1.42];
+    member('cv'+s);
     shaft(inner,joint,.022,stainless);
     for (const t of [.03,.88]) {
       const centre=at(inner,joint,t);
@@ -170,30 +186,42 @@ export function buildChassis(THREE) {
         shaft([xx-.004,centre[1],centre[2]],[xx+.004,centre[1],centre[2]],.047-i*.0013,rubber,16);
       }
     }
+    member('upright'+s);
     shaft([s*.704,.332,1.42],[s*.719,.556,1.41],.039,cast);
     // Both wishbones have widely spaced inboard pivots.
     for(const k of [0,1]) {
       const yy=k?.582:.347, endY=k?.554:.328, spread=k?.146:.206;
       const innerX=s*(k?.476:.354),endX=s*(k?.713:.705);
       const ends=[[innerX,yy,1.42-spread],[innerX,yy,1.42+spread]];
+      member('wishbone'+s+'-'+k);
       pipe([ends[0],[s*.562,yy-.009,1.42-spread*.68],[endX,endY,1.42],
         [s*.564,yy-.009,1.42+spread*.68],ends[1]],k?.022:.036,bracket,16);
       shaft([endX,endY-.012,1.42],[endX,endY+.018,1.42],k?.032:.046,rubber);
+      member('sprung');
       for (const p of ends) bush(p,[0,0,1],.036,.077);
       if(!k) {
+        member('wishbone'+s+'-0');
         shaft([s*.52,.34,1.30],[s*.52,.34,1.54],.022,bracket);
+        // A splined torsion-bar socket rotates with the lower arm, with a
+        // metal witness on the sleeve that exposes the angular movement.
+        shaft([innerX,.347,1.193],[innerX,.347,1.244],.033,cast,8);
+        shaft([innerX+s*.024,.363,1.200],[innerX+s*.024,.363,1.234],.0038,fastener,7);
+        member('sprung');
         shaft([innerX,.347,1.22],[s*.39,.428,.088],.018,spring,16);
         box([s*.39,.432,.09],[.11,.062,.10],bracket);
         footBolt(s*.405,.401,.09,.011);
       }
     }
-    shock([s*.601,.345,1.474],[s*.47,.755,1.505]);
+    shock([s*.601,.345,1.474],[s*.47,.755,1.505],'front-damper'+s);
+    member('sprung');
     // Upper shock tower, chassis-mounted bump stop and steering outer joint.
     box([s*.465,.681,1.50],[.086,.169,.084],bracket);
     shaft([s*.56,.499,1.482],[s*.56,.549,1.482],.032,rubber);
+    member('tie'+s);
     shaft([s*.349,.474,1.241],[s*.698,.418,1.317],.014,caseMetal);
     oval([s*.698,.418,1.317],[.027,.027,.027],cast);
   }
+  member('sprung');
   shaft([-.354,.473,1.241],[.354,.473,1.241],.033,caseMetal);
   for(const s of [-1,1]) {
     for(let i=0;i<6;i++) {
@@ -201,9 +229,11 @@ export function buildChassis(THREE) {
       shaft([x-.003,.474,1.241],[x+.003,.474,1.241],.038,rubber);
     }
   }
+  member('stabilizer');
   pipe([[-.636,.341,1.527],[-.606,.378,1.687],[-.438,.417,1.719],[-.25,.4,1.731],
     [.25,.4,1.731],[.438,.417,1.719],[.606,.378,1.687],[.636,.341,1.527]],.015,spring,33);
 
+  member('rear-axle');
   // The rear differential and tapered axle tubes form a single beam below the springs.
   for (const s of [-1,1]) {
     shaft([s*.085,.409,-1.43],[s*.635,.405,-1.43],.069,bracket,18,.046);
@@ -221,39 +251,54 @@ export function buildChassis(THREE) {
   }
   for (const s of [-1,1]) {
     const x=s*.48,z=-1.445;
+    member('rear-axle');
     shaft([x,.424,z],[x,.455,z],.10,bracket,22);
-    shaft([x,.682,z],[x,.710,z],.10,bracket,22);
+    member('sprung');
+    shaft([x,.783,z],[x,.811,z],.10,bracket,22);
+    box([s*.506,.765,z],[.112,.056,.113],bracket);
     const coils=[];
     for (let i=0; i<=100; i++) {
       const t=i/100,a=t*5.9*Math.PI*2;
       const r=.078-.012*Math.pow(Math.abs(t*2-1),4);
-      coils.push([x+Math.cos(a)*r,.46+t*.221,z+Math.sin(a)*r]);
+      coils.push([x+Math.cos(a)*r,.460+t*.322,z+Math.sin(a)*r]);
     }
-    pipe(coils,.0115,spring,120,7);
-    shaft([x,.675,z],[x,.603,z],.029,rubber);
+    member('rear-coil'+s);
+    pipe(coils,.0090,spring,120,7);
+    member('sprung');
+    shaft([x,.781,z],[x,.697,z],.029,rubber);
     const mount=[s*.59,.64,-1.659],eye=[s*.585,.359,-1.377];
-    shock(eye,mount);
+    shock(eye,mount,'rear-damper'+s);
+    member('sprung');
     box([s*.563,.647,-1.661],[.115,.063,.068],bracket);
     // Two lower trailing links and two shorter upper links with bushed eyes.
     for (const [a,b,r] of [
       [[s*.56,.415,-.747],[s*.588,.343,-1.433],.028],
       [[s*.431,.524,-1.007],[s*.382,.482,-1.426],.023]
     ]) {
+      member((r===.028?'lower-link':'upper-link')+s);
       shaft(a,b,r,frame);
       for(const p of [a,b]) {
+        member(p===a?'sprung':'rear-axle');
         bush(p,[1,0,0],r*1.42,.084);
         for(const dx of [-.047,.047]) box([p[0]+dx,p[1]+.021,p[2]],[.009,.088,.075],bracket);
       }
     }
+    member('rear-axle');
     pipe([[s*.71,.427,-1.443],[s*.579,.471,-1.457],[s*.468,.471,-1.453],
       [s*.30,.479,-1.446],[s*.145,.48,-1.441]],.005,caseMetal,16,6);
   }
   const lateralA=[-.533,.536,-1.56],lateralB=[.557,.39,-1.532];
+  member('panhard');
   shaft(lateralA,lateralB,.020,frame);
-  for (const p of [lateralA,lateralB]) bush(p,[0,0,1],.03,.073);
+  for (const p of [lateralA,lateralB]) {
+    member(p===lateralA?'sprung':'rear-axle');
+    bush(p,[0,0,1],.03,.073);
+  }
+  member('rear-axle');
   pipe([[-.599,.407,-1.31],[-.60,.413,-1.51],[-.55,.40,-1.654],[-.27,.403,-1.67],
     [.27,.403,-1.67],[.55,.40,-1.654],[.60,.413,-1.51],[.599,.407,-1.31]],.012,spring,30);
 
+  member('sprung');
   // Sump, bellhousing, transmission and offset-output transfer case.
   stamping([[0,.638,1.03,.39,.247],[0,.631,1.09,.49,.248],[0,.631,1.62,.48,.25],
     [0,.643,1.70,.39,.21]],cast);
@@ -290,7 +335,9 @@ export function buildChassis(THREE) {
       shaft(at(left,right,.092),at(left,right,.112),r*1.08,bracket,16);
     }
   }
+  member('rear-prop');
   propeller([.038,.528,-.196],[.045,.4,-1.191],.038);
+  member('sprung');
   propeller([.184,.526,.063],[.145,.435,1.25],.027);
 
   // Formed tank and two transverse straps. Recessed ribs and flanges catch
@@ -405,16 +452,20 @@ export function buildChassis(THREE) {
     [-.29,.586,-.04,.321,.014],[-.29,.604,.018,.205,.014]],caseMetal,.006);
   for(const x of [-.42,-.16]) for(const z of [-.685,-.112]) footBolt(x,.58,z,.008);
   // Drain/filler plugs and stamped retaining clips on the service lines.
+  member('rear-axle');
   shaft([.049,.244,-1.433],[.049,.252,-1.433],.018,fastener,6);
   shaft([.063,.397,-1.590],[.063,.397,-1.580],.0175,fastener,6);
+  member('sprung');
   footBolt(-.103,.396,1.49,.0125);
   for(const s of [-1,1]){
+    member('sprung');
     for(const [z,x,y] of [[-1.63,.449,.621],[-1.28,.456,.622],[-.76,.478,.481],[-.30,.475,.461],[.19,.466,.459],[.62,.444,.472],[1.19,.359,.524]]){
       box([s*x,y,z],[.036,.017,.024],rubber);
       shaft([s*(x+.011),y-.007,z],[s*(x+.011),y+.008,z],.0074,fastener,6);
     }
     // Spring-retaining pad and fasteners for the small brake-backing plate.
     const cx=s*.48;
+    member('rear-axle');
     for(const off of [-.073,.073]) footBolt(cx+off,.449,-1.445,.009);
   }
   let underseal = null;
@@ -424,43 +475,49 @@ export function buildChassis(THREE) {
     underseal.wrapS=underseal.wrapT=THREE.RepeatWrapping;
     underseal.anisotropy=4;
   }
-  for (const [surface, parts] of batches) {
-    const position = [], normal = [], indices = [];
-    let vertexOffset = 0;
-    for (const geom of parts) {
-      const p=geom.getAttribute('position'), n=geom.getAttribute('normal'), idx=geom.index;
-      for(let i=0;i<p.count;i++) {
-        position.push(p.getX(i),p.getY(i),p.getZ(i));
-        normal.push(n.getX(i),n.getY(i),n.getZ(i));
+  for (const [label, materials] of assemblies) {
+    const assembly=articulate?new THREE.Group():group;
+    if(articulate){assembly.name=label;group.add(assembly);}
+    for (const [surface, parts] of materials) {
+      const position = [], normal = [], indices = [];
+      let vertexOffset = 0;
+      for (const geom of parts) {
+        const p=geom.getAttribute('position'), n=geom.getAttribute('normal'), idx=geom.index;
+        for(let i=0;i<p.count;i++) {
+          position.push(p.getX(i),p.getY(i),p.getZ(i));
+          normal.push(n.getX(i),n.getY(i),n.getZ(i));
+        }
+        for(let i=0;i<(idx?idx.count:p.count);i++) indices.push(vertexOffset+(idx?idx.getX(i):i));
+        vertexOffset+=p.count;
+        geom.dispose();
       }
-      for(let i=0;i<(idx?idx.count:p.count);i++) indices.push(vertexOffset+(idx?idx.getX(i):i));
-      vertexOffset+=p.count;
-      geom.dispose();
-    }
-    const geo=new THREE.BufferGeometry();
-    geo.setAttribute('position',new THREE.Float32BufferAttribute(position,3));
-    geo.setAttribute('normal',new THREE.Float32BufferAttribute(normal,3));
-    if (underseal && surface !== fastener && surface !== dark && surface !== stainless) {
-      const uv = new Float32Array(vertexOffset*2);
-      // Project the same physical grain scale onto rails, castings and brackets.
-      for (let i=0;i<vertexOffset;i++) {
-        const k=i*3, x=position[k],y=position[k+1],z=position[k+2];
-        const ax=Math.abs(normal[k]), ay=Math.abs(normal[k+1]), az=Math.abs(normal[k+2]);
-        if (ay>=ax && ay>=az) { uv[i*2]=x*2.7;uv[i*2+1]=z*2.7; }
-        else if (ax>=az) { uv[i*2]=z*2.7;uv[i*2+1]=y*2.7; }
-        else { uv[i*2]=x*2.7;uv[i*2+1]=y*2.7; }
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(position,3));
+      geo.setAttribute('normal',new THREE.Float32BufferAttribute(normal,3));
+      if (underseal && surface !== fastener && surface !== dark && surface !== stainless) {
+        const uv = new Float32Array(vertexOffset*2);
+        // Project the same physical grain scale onto rails, castings and brackets.
+        for (let i=0;i<vertexOffset;i++) {
+          const k=i*3, x=position[k],y=position[k+1],z=position[k+2];
+          const ax=Math.abs(normal[k]), ay=Math.abs(normal[k+1]), az=Math.abs(normal[k+2]);
+          if (ay>=ax && ay>=az) { uv[i*2]=x*2.7;uv[i*2+1]=z*2.7; }
+          else if (ax>=az) { uv[i*2]=z*2.7;uv[i*2+1]=y*2.7; }
+          else { uv[i*2]=x*2.7;uv[i*2+1]=y*2.7; }
+        }
+        geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+        if (!surface.map) {
+          surface.map=underseal;
+          surface.color.multiplyScalar(1.38);
+        }
       }
-      geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));
-      surface.map=underseal;
-      surface.color.multiplyScalar(1.38);
+      geo.setIndex(indices);
+      geo.computeBoundingSphere();
+      const mesh=new THREE.Mesh(geo,surface);
+      mesh.name=surface.name;
+      mesh.castShadow=true;
+      mesh.receiveShadow=true;
+      assembly.add(mesh);
     }
-    geo.setIndex(indices);
-    geo.computeBoundingSphere();
-    const mesh=new THREE.Mesh(geo,surface);
-    mesh.name=surface.name;
-    mesh.castShadow=true;
-    mesh.receiveShadow=true;
-    group.add(mesh);
   }
   return group;
 }

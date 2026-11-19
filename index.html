@@ -8,6 +8,7 @@
   <title>Land Cruiser Studio · Land Cruiser V8</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23274438'/%3E%3Cpath d='m5 25 9-13 6 9 6-11 9 15M5 29l9-12 6 9 6-11 9 14' fill='none' stroke='%23e4ebd5' stroke-width='1.7' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./studio-nav.css">
   <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 </head>
 <body>
@@ -30,6 +31,10 @@
   <header class="masthead">
     <div class="header-inner">
       <div class="wordmark"><span class="brand-mark" aria-hidden="true"><svg><use href="#i-brand"/></svg></span><span>Land Cruiser <span class="wordmark-light">Studio</span></span></div>
+      <nav class="studio-nav" aria-label="Studio">
+        <a href="./" aria-current="page">3D viewer</a>
+        <a href="./simulator/">Suspension simulator</a>
+      </nav>
       <button type="button" class="controls-button" id="controls-open" aria-haspopup="dialog" aria-controls="controls-dialog"><svg class="icon" aria-hidden="true"><use href="#i-controls"/></svg>Controls</button>
     </div>
   </header>

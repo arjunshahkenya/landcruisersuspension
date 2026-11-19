@@ -1,0 +1,52 @@
+.sim-time-dial {
+  display: inline-flex; align-items: center; flex: none; gap: 5px;
+  min-width: 0; color: #284434;
+  font-family: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+}
+.sim-time-dial__knob {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none; width: 52px; height: 52px;
+  border-radius: 50%; outline-offset: 1px;
+  touch-action: none; -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent; cursor: grab;
+}
+.sim-time-dial__knob.is-dragging { cursor: grabbing; }
+.sim-time-dial__knob svg { display: block; width: 100%; height: 100%; pointer-events: none; }
+.sim-time-dial__tick { stroke: #c9d3c9; stroke-width: 1.15; stroke-linecap: round; }
+.sim-time-dial__tick.is-major { stroke-width: 1.65; }
+.sim-time-dial__tick.is-active { stroke: #56775f; }
+.sim-time-dial__rail, .sim-time-dial__arc {
+  fill: none; stroke: #e1e7dd; stroke-width: 1.05;
+}
+.sim-time-dial__arc { stroke: #698872; }
+.sim-time-dial__face {
+  fill: #e9eee7; stroke: #93a695; stroke-width: .85;
+  filter: drop-shadow(0 1px 1px rgb(26 46 30 / 18%));
+}
+.sim-time-dial__hub { fill: #f6f8f4; stroke: #fff; stroke-width: .7; }
+.sim-time-dial__pointer { stroke: #325b3e; stroke-width: 2.6; stroke-linecap: round; }
+.sim-time-dial__icon { fill: none; stroke: #667d6a; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.sim-time-dial__icon.is-play { fill: #667d6a; stroke: none; }
+.sim-time-dial__knob:hover .sim-time-dial__face, .sim-time-dial__knob.is-dragging .sim-time-dial__face { fill: #dae5d8; }
+.sim-time-dial__menu { display: grid; align-content: center; justify-items: start; gap: 1px; }
+.sim-time-dial__label { color: #596a5c; font-size: .75rem; line-height: 1.15; font-weight: 550; white-space: nowrap; }
+.sim-time-dial__select {
+  box-sizing: border-box;
+  width: 5.2rem; max-width: 100%; height: 26px;
+  margin: 0; padding: 1px 3px 2px 6px;
+  border: 1px solid #d4ddd2; border-radius: 5px;
+  background: #f7f9f5; color: #23422e; cursor: pointer;
+  font: 620 .85rem/1.2 "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.sim-time-dial__knob:focus-visible, .sim-time-dial__select:focus-visible {
+  outline: 2px solid #52775c; outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .sim-time-dial__select { height: 30px; font-size: 1rem; }
+}
+@media (forced-colors: active) {
+  .sim-time-dial__knob { border: 1px solid ButtonText; }
+  .sim-time-dial__tick, .sim-time-dial__pointer, .sim-time-dial__icon { stroke: ButtonText; }
+  .sim-time-dial__icon.is-play { fill: ButtonText; }
+}

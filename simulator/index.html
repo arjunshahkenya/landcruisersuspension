@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f8f4">
+  <meta name="description" content="Simulate how a Toyota Land Cruiser responds to a road bump. Tune the suspension, orbit the 3D model and replay the run in slow motion.">
+  <title>Suspension simulator · Land Cruiser Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%23244232'/%3E%3Cpath d='m5 26 10-15 6 9 5-8 9 14' fill='none' stroke='%23ddebd6' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="../sim-layout.css">
+  <link rel="stylesheet" href="../studio-nav.css">
+  <link rel="stylesheet" href="../sim-controls.css">
+  <link rel="stylesheet" href="../sim-dial.css">
+  <script type="importmap">{"imports":{"three":"../vendor/three.module.js"}}</script>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="mountains" viewBox="0 0 40 40"><g fill="none" stroke="currentColor" stroke-linejoin="round" stroke-linecap="round"><path d="m4.5 25 9.9-14.4 5.7 8.2 6.2-10.2L35.5 25" stroke-width="1.8"/><path d="m5 29 9.5-13.2 5.7 8 6.1-10.1 8.7 15.1" stroke-width="1.55"/><path d="m11.9 27.1 2.9-4.4 5.2 7.2 6.2-9.9 3.5 5.9" stroke-width="1.45"/></g></symbol>
+    <symbol id="play" viewBox="0 0 24 24"><path d="M7 4.8a.8.8 0 0 1 1.2-.7l12 7.2a.8.8 0 0 1 0 1.4l-12 7.2a.8.8 0 0 1-1.2-.7z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="pause" viewBox="0 0 24 24"><path d="M7.5 5v14M16.5 5v14" stroke-width="4"/></symbol>
+    <symbol id="rewind" viewBox="0 0 24 24"><path d="M5 8v-4m0 4h4M5.6 7.6A7.5 7.5 0 1 1 4.7 15"/></symbol>
+    <symbol id="layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Zm-8.6 9.2L12 17l8.6-4.8M3.4 16.4l8.6 4.8 8.6-4.8"/></symbol>
+    <symbol id="orbit" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="10" ry="4.3" transform="rotate(-28 12 12)"/><path d="M6.6 6.7a7.5 7.5 0 0 1 12.9 5m-2.3 5.6A7.5 7.5 0 0 1 4.5 12"/></symbol>
+    <symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 11v5m0-8v.2"/></symbol>
+  </svg>
+  <header class="masthead"><div class="header-inner">
+    <a class="wordmark" href="../" aria-label="Land Cruiser Studio home"><span class="brand-mark"><svg aria-hidden="true"><use href="#mountains"/></svg></span><span>Land Cruiser <span>Studio</span></span></a>
+    <nav class="studio-nav" aria-label="Studio"><a href="../">3D viewer</a><a href="../simulator/" aria-current="page">Suspension simulator</a></nav>
+  </div></header>
+  <main class="lab">
+    <header class="intro">
+      <h1>Suspension simulator</h1>
+      <p>Drive the Land Cruiser over a bump. Tune the setup and watch each axle respond.</p>
+    </header>
+    <div class="workspace">
+      <section class="test-bench" aria-label="3D suspension test">
+        <div class="road-stage" id="road-stage">
+          <canvas id="road-canvas" tabindex="0" aria-label="Orbitable 3D vehicle and road. Drag or use the arrow keys to orbit. Scroll or pinch to zoom."></canvas>
+          <div class="stage-head"><div class="vehicle-title"><span class="make">TOYOTA</span><h2>Land Cruiser 100</h2></div>
+            <div id="phase" class="phase" role="status">Ready</div></div>
+          <div id="stage-loading" class="stage-loading" role="status">Preparing the 3D model…</div>
+          <div class="stage-foot"><span class="orbit-hint"><svg><use href="#orbit"/></svg>Drag to orbit</span>
+            <div class="stage-tools"><label class="camera-choice"><span class="sr-only">Camera view</span>
+              <select id="camera-view"><option value="orbit">Orbit view</option><option value="side">Side view</option><option value="front">Front view</option><option value="under">Underbody</option><option value="frontAxle">Front suspension</option><option value="rearAxle">Rear suspension</option></select></label>
+            <button type="button" id="cutaway" aria-pressed="false"><svg><use href="#layers"/></svg>Cutaway</button></div>
+          </div>
+        </div>
+        <div class="transport">
+          <div class="transport-row"><div class="primary-transport"><button id="toggle-play" type="button" class="primary" disabled><svg><use id="play-glyph" href="#play"/></svg><span>Run simulation</span></button>
+          <button id="restart" type="button" class="restart" aria-label="Return to start" title="Return to start" disabled><svg><use href="#rewind"/></svg></button></div>
+          <div id="time-dial"></div></div>
+          <div class="timeline"><label for="time-scrub">Timeline</label><input id="time-scrub" type="range" min="0" max="1" step="0.001" value="0" disabled><output id="time-display" for="time-scrub">0.00 s</output></div>
+        </div>
+      </section>
+      <div id="test-setup" class="test-setup"></div>
+      <section class="peak-strip" aria-label="Peak response over the whole run">
+        <div><span>Peak body rise</span><strong id="peak-rise">—</strong><small>mm</small></div>
+        <div><span>Peak pitch</span><strong id="peak-pitch">—</strong><small>°</small></div>
+        <div><span>Peak vertical acceleration</span><strong id="peak-accel">—</strong><small>g</small></div>
+      </section>
+    </div>
+    <div id="telemetry"></div>
+    <details class="model-note"><summary><svg aria-hidden="true"><use href="#info"/></svg>How the physics works</summary>
+      <div class="note-body"><p>The body can rise, fall and pitch. Each axle moves against springs and dampers, and tires can lose contact and land again. Tire radius and the length of the contact patch determine how each tire climbs the bump. Both wheels on an axle follow the same road profile, with the rear axle one wheelbase behind the front.</p>
+      <p>The 2.85 m wheelbase and 2,370 kg starting mass come from Toyota’s 100 Series specifications. The spring rates are effective rates at each wheel. Damper, tire and weight-distribution values are estimates. Weight and stiffness change the resting ride height. The chart measures motion from that resting position.</p>
+      <p>Speed stays constant throughout each pass. The time dial changes playback only. Steering, braking, roll and active height control are outside this model.</p>
+      <div class="source-links"><a href="https://www.toyota-global.com/company/history_of_toyota/75years/vehicle_lineage/car/id60012613/">Toyota specifications</a><a href="https://sites.usp.br/ldsv/wp-content/uploads/sites/1453/2024/08/Marchesin_2019_IOP_Conf._Ser.__Mater._Sci._Eng._538_012069.pdf">Half-car model reference</a></div></div>
+    </details>
+    <noscript>Enable JavaScript to run the suspension simulator.</noscript>
+  </main>
+  <script type="module" src="../sim-app.js"></script>
+</body>
+</html>

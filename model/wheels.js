@@ -1,5 +1,5 @@
 // All dimensions are in metres. Each wheel is assembled facing local +Z.
-export function buildWheels(THREE) {
+export function buildWheels(THREE, { simulation = false } = {}) {
   const assembly = new THREE.Group();
   assembly.name = 'Five-spoke alloy wheels and all-terrain tires';
   const wheel = new THREE.Group();
@@ -381,9 +381,16 @@ export function buildWheels(THREE) {
     for (const z of [-1.43,1.42]) {
       const front=z>0, axle=front?1:0, roll=front?0:23*rad, item=prototype.clone();
       for(const m of item.children) {
-        if(!tireFinishes.has(m.material)) continue;
-        if(!loaded[axle].has(m.geometry)) loaded[axle].set(m.geometry,loadTire(m.geometry,roll));
-        m.geometry=loaded[axle].get(m.geometry);
+        if(simulation){
+          // The simulator keeps the backing plate/caliper fixed to the wheel
+          // carrier and computes a road contact patch on the rolling rubber.
+          m.userData.simBrakeFixed=m.material===brakeDark;
+          m.userData.simBrakeDisc=m.material===brakeSteel||m.material===agedSteel;
+          m.userData.simTire=tireFinishes.has(m.material);
+        } else if(tireFinishes.has(m.material)){
+          if(!loaded[axle].has(m.geometry))loaded[axle].set(m.geometry,loadTire(m.geometry,roll));
+          m.geometry=loaded[axle].get(m.geometry);
+        }
       }
       item.name=(front?'Front':'Rear')+(side<0?' right':' left')+' wheel';
       if(front) {

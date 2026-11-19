@@ -8,7 +8,7 @@ await rm(out, { recursive: true, force: true });
 await mkdir(join(out, 'vendor'), { recursive: true });
 
 for (const entry of await readdir(root)) {
-  if (/\.(html|css|js|svg|woff2|ico)$/.test(entry) || ['model', 'fonts'].includes(entry)) {
+  if (/\.(html|css|js|svg|woff2|ico)$/.test(entry) || ['model', 'fonts', 'simulator'].includes(entry)) {
     await cp(join(root, entry), join(out, entry), { recursive: true });
   }
 }
