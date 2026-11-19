@@ -81,25 +81,28 @@ export async function createSoftwareRenderer(canvas, THREE) {
   if(!ctx)throw Error('This browser cannot create a 2D drawing surface.');
   let width=1,height=1,pixelRatio=1,prepared=null,worker=null,local=null;
   let inFlight=false,lastRequest=null,pending=null,lastRender=-Infinity,refineTimer=0;
-  let receivedFrames=0, waitForTextures=0;
+  let receivedFrames=0, waitForTextures=0, texturePolls=0;
   const sent=new Map(), matrix=new THREE.Matrix4();
   function installTextures() {
-    let unloaded=false;
+    let unloaded=false,changed=false;
     for(const [key,texture] of prepared.textures) {
       if(sent.has(key)) continue;
       let data;
       try { data=readTexture(texture); }
       catch { sent.set(key,null); continue; }
       if(!data) { unloaded=true;continue; }
-      sent.set(key,data);
+      sent.set(key,data); changed=true;
       if(worker) worker.postMessage({type:'texture',data});
       else local?.setTexture(data);
     }
-    if(unloaded && !waitForTextures) waitForTextures=setTimeout(()=>{
-      waitForTextures=0;installTextures();
-      if(lastRequest) enqueue({...lastRequest,final:true});
-      api.onReady?.();
-    },180);
+    if(unloaded && !waitForTextures && texturePolls<120) waitForTextures=setTimeout(()=>{
+      waitForTextures=0;texturePolls++;
+      if(installTextures()) {
+        if(lastRequest) enqueue({...lastRequest,final:true});
+        api.onReady?.();
+      }
+    },250);
+    return changed;
   }
   function present(data,w,h) {
     if(canvas.width!==w || canvas.height!==h) {canvas.width=w;canvas.height=h;}
@@ -142,7 +145,7 @@ export async function createSoftwareRenderer(canvas, THREE) {
     if(inFlight) {pending=request;return;}
     const final=request.final;
     const limit=final?1200:760, budget=final?820000:245000;
-    const scale=Math.min(pixelRatio,limit/Math.max(1,width,height),Math.sqrt(budget/Math.max(1,width*height)));
+    const scale=Math.min(final ? pixelRatio*1.15 : pixelRatio,limit/Math.max(1,width,height),Math.sqrt(budget/Math.max(1,width*height)));
     const w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
     const payload={...request,width:w,height:h};
     if(worker) {

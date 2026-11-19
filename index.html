@@ -37,6 +37,7 @@
   <main class="page">
     <section class="viewer-panel" aria-labelledby="vehicle-name">
       <div class="stage" id="stage">
+        <img id="studio-poster" src="./references/studio-poster.webp" alt="" fetchpriority="high">
         <canvas id="model-canvas" tabindex="0" aria-label="Interactive 3D model of the Toyota Land Cruiser. Drag to orbit, or use the camera view buttons below."></canvas>
         <img id="stage-fallback" hidden alt="Front three-quarter photograph of the dark green Land Cruiser">
         <div class="vehicle-ident">
@@ -44,6 +45,7 @@
           <h1 id="vehicle-name">Land Cruiser V8</h1>
           <div class="registration" aria-label="Kenyan registration KBJ 702L"><span class="kenya-flag" aria-hidden="true"></span>KBJ 702L</div>
         </div>
+        <div class="view-caption" id="view-caption" hidden></div>
         <div class="stage-status" id="stage-status" role="status">Loading model…</div>
         <div class="stage-dock">
           <p class="gesture"><svg class="icon" aria-hidden="true"><use href="#i-hand"/></svg><span>Drag to orbit <b>·</b> <span class="mouse-hint">Scroll</span><span class="touch-hint">Pinch</span> to zoom</span></p>
@@ -69,9 +71,13 @@
           <button type="button" data-view="underbody" aria-pressed="false">Underbody</button>
         </div>
       </div>
-      <div class="underbody-controls">
+      <div class="underbody-controls" id="underbody-controls" hidden>
         <p id="preset-note" hidden>Chassis and suspension are reconstructed from the 100 Series layout.</p>
+        <div class="mechanical-actions" role="group" aria-label="Underbody inspection">
+        <button type="button" class="mechanical-view" data-part="front-suspension" aria-pressed="false">Front suspension</button>
+        <button type="button" class="mechanical-view" data-part="rear-axle" aria-pressed="false">Rear axle</button>
         <button type="button" id="chassis-toggle" class="chassis-toggle" aria-pressed="false" hidden><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span>Isolate chassis</span></button>
+        </div>
       </div>
     </section>
 

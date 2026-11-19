@@ -163,3 +163,12 @@ dialog dd { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.5; 
 .viewer-panel:fullscreen .stage, .viewer-panel.expanded .stage { flex: 1; min-height: 0; height: auto; }
 body.viewer-expanded { overflow: hidden; }
 .unavailable .gesture { visibility: hidden; }
+
+.stage.inspection-view .vehicle-ident { opacity: 0; }
+.view-caption { position: absolute; z-index: 2; left: clamp(16px,2.3vw,36px); top: 18px; padding: 6px 11px; border: 1px solid #c9d0c5; background: rgb(249 250 246 / 92%); color: #334638; font-size: .88rem; font-weight: 600; border-radius: 6px; pointer-events: none; }
+
+#studio-poster { position: absolute; z-index: 1; pointer-events: none; left: 50%; top: 52%; transform: translate(-50%,-50%); width: 83%; height: 80%; object-fit: contain; }
+.mechanical-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.mechanical-view { min-height: 34px; background: transparent; color: #475b4a; border: 1px solid transparent; border-radius: 7px; padding-inline: 10px; font-size: .82rem; }
+.mechanical-view:hover, .mechanical-view[aria-pressed="true"] { background: #e7ede3; color: #283c2c; }
+.mechanical-actions .chassis-toggle { margin-left: 3px; }

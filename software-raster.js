@@ -5,13 +5,44 @@ import { makeShade } from './software-shading.js';
 export function createRasterizer(source) {
   const materials = source.materials.map(m => ({ ...m, shade: makeShade(m) }));
   const textures = new Map();
-  const meshes = source.meshes.map(mesh => {
+  function workingMesh(mesh) {
     const count = mesh.positions.length / 3;
     return {...mesh,
       sx: new Float32Array(count), sy: new Float32Array(count), iz: new Float32Array(count),
       shade: new Float32Array(count * 3), stamp: new Uint32Array(count)
     };
-  });
+  }
+  const meshes = source.meshes.map(workingMesh);
+  // Cluster small, untextured triangles during continuous motion. Every
+  // stationary frame and every close inspection still uses the full mesh.
+  function motionVersion(mesh) {
+    if (mesh.uv || mesh.colors || mesh.count < 450 || materials[mesh.material].transparent) return mesh;
+    const p=mesh.positions, n=mesh.normals, grid=new Map(), ids=new Uint32Array(p.length/3);
+    const accum=[], norm=[], weights=[], ix=[];
+    const inv=1/Math.min(.024, Math.max(.006,mesh.radius*.11));
+    for(let i=0,k=0; k<p.length; i++,k+=3) {
+      const x=Math.floor(p[k]*inv), y=Math.floor(p[k+1]*inv), z=Math.floor(p[k+2]*inv);
+      const key=(x+1024)*4194304+(y+1024)*2048+z+1024;
+      let id=grid.get(key);
+      if(id===undefined) {id=weights.length;grid.set(key,id);weights.push(0);accum.push(0,0,0);norm.push(0,0,0);}
+      const a=id*3; ids[i]=id; weights[id]++;
+      accum[a]+=p[k];accum[a+1]+=p[k+1];accum[a+2]+=p[k+2];
+      norm[a]+=n[k];norm[a+1]+=n[k+1];norm[a+2]+=n[k+2];
+    }
+    if(weights.length>p.length*.28) return mesh;
+    for(let j=mesh.start, end=j+mesh.count;j<end;j+=3) {
+      const a=ids[mesh.indices?mesh.indices[j]:j],b=ids[mesh.indices?mesh.indices[j+1]:j+1],c=ids[mesh.indices?mesh.indices[j+2]:j+2];
+      if(a!==b&&b!==c&&a!==c) ix.push(a,b,c);
+    }
+    if(ix.length<24 || ix.length>mesh.count*.85) return mesh;
+    for(let j=0,k=0;j<weights.length;j++,k+=3) {
+      const w=1/weights[j], s=1/(Math.hypot(norm[k],norm[k+1],norm[k+2])||1);
+      accum[k]*=w;accum[k+1]*=w;accum[k+2]*=w;
+      norm[k]*=s;norm[k+1]*=s;norm[k+2]*=s;
+    }
+    return workingMesh({...mesh,positions:new Float32Array(accum), normals:new Float32Array(norm),
+      indices:new (weights.length>65535?Uint32Array:Uint16Array)(ix),start:0,count:ix.length});
+  }
   let sequence = 0, zBuffer = new Float32Array(), pixels, rgba;
   function setTexture(texture) { textures.set(texture.key, texture); }
 
@@ -41,7 +72,10 @@ export function createRasterizer(source) {
     opaque.sort((a,b)=>(meshes[a].depth-meshes[a].radius*.6)-(meshes[b].depth-meshes[b].radius*.6));
     blended.sort((a,b)=>meshes[b].depth-meshes[a].depth || meshes[a].order-meshes[b].order);
     for (const j of [...ground, ...opaque, ...blended]) {
-      const mesh=meshes[j], mat=materials[mesh.material], tex=textures.get(mat.map);
+      const full=meshes[j];
+      if (!final && full.depth>2.2 && !full.motion) full.motion=motionVersion(full);
+      const mesh=(!final && full.depth>2.2 && full.motion)||full;
+      const mat=materials[mesh.material], tex=textures.get(mat.map);
       if (mat.map && !tex && (mat.alphaTest || mesh.ground)) continue;
       const world=mesh.positions, normal=mesh.normals, colors=mesh.colors, uv=mesh.uv;
       const {sx,sy,iz,shade,stamp,indices}=mesh;
@@ -164,6 +198,9 @@ export function createRasterizer(source) {
         }
         const xa=sx[a],ya=sy[a],xb=sx[b],yb=sy[b],xc=sx[c],yc=sy[c];
         if ((ya<0&&yb<0&&yc<0)||(ya>=height&&yb>=height&&yc>=height)||(xa<0&&xb<0&&xc<0)||(xa>=width&&xb>=width&&xc>=width))continue;
+        const xmin=Math.max(0,Math.ceil(Math.min(xa,xb,xc)-.5)), xmax=Math.min(width-1,Math.floor(Math.max(xa,xb,xc)-.5));
+        const ymin=Math.max(0,Math.ceil(Math.min(ya,yb,yc)-.5)), ymax=Math.min(height-1,Math.floor(Math.max(ya,yb,yc)-.5));
+        if(xmin>xmax || ymin>ymax || (xmin===xmax && ymin===ymax && Math.max(qa,qb,qc)+bias<zBuffer[ymin*width+xmin]-.00000006))continue;
         const det=(xb-xa)*(yc-ya)-(xc-xa)*(yb-ya);
         if (Math.abs(det)<.023 || (mat.side!==2 && (mat.side===1 ? det*mesh.frontSign<0 : det*mesh.frontSign>0))) continue;
         shadeVertex(a); shadeVertex(b); shadeVertex(c);

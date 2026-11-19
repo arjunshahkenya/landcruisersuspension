@@ -5,6 +5,7 @@ const panel = stage.closest('.viewer-panel');
 const dialog = $('controls-dialog');
 const presets = [...document.querySelectorAll('[data-view]')];
 const details = [...document.querySelectorAll('[data-detail]')];
+const parts = [...document.querySelectorAll('[data-part]')];
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
 $('controls-open').onclick = () => dialog.showModal();
 $('controls-close').onclick = () => dialog.close();
@@ -41,6 +42,7 @@ document.addEventListener('keydown', e => {
 function showFallback(error) {
   console.error('Viewer could not start', error);
   canvas.hidden = true;
+  $('studio-poster').hidden = true;
   const photo = $('stage-fallback');
   photo.src = './references/overview.webp';
   photo.hidden = false;
@@ -104,12 +106,15 @@ async function start() {
     bumper: {target:[0,.84,2.26], dir:[-.45,.24,1], distance:2.75},
     wheel: {target:[-.8,.44,1.42], dir:[-1,.14,.45], distance:1.8},
     rack: {target:[0,1.92,-.64], dir:[-.92,.65,.72], distance:3.55},
-    spare: {target:[-.34,1.03,-2.5], dir:[-.32,.17,-1], distance:2.15}
+    spare: {target:[-.34,1.03,-2.5], dir:[-.32,.17,-1], distance:2.15},
+    'front-suspension': {target:[0,.43,1.35], dir:[-.38,-1,.44], distance:2.85, mechanical:true},
+    'rear-axle': {target:[0,.43,-1.41], dir:[-.34,-1,-.38], distance:2.75, mechanical:true}
   };
+  const titles = Object.fromEntries([...presets, ...details, ...parts].map(b => [b.dataset.view || b.dataset.detail || b.dataset.part, b.textContent.trim()]));
   const requested = new URLSearchParams(location.search);
   if (Object.hasOwn(pose, requested.get('view'))) active = requested.get('view');
   if (Object.hasOwn(closeups, requested.get('detail'))) {
-    detail = requested.get('detail'); active = '';
+    detail = requested.get('detail'); active = closeups[detail].mechanical ? 'underbody' : '';
   }
   inspection = active === 'underbody';
   function rememberView() {
@@ -179,11 +184,17 @@ async function start() {
   function reflect() {
     presets.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === active && !detail)));
     details.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.detail === detail)));
+    parts.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.part === detail)));
+    $('underbody-controls').hidden = !inspection;
     const b = $('chassis-toggle');
     b.hidden = !inspection; $('preset-note').hidden = !inspection;
     b.setAttribute('aria-pressed', String(isolated));
     b.querySelector('span').textContent = isolated ? 'Show bodywork' : 'Isolate chassis';
     stage.dataset.view = detail || active || 'free';
+    const label = $('view-caption');
+    label.textContent = titles[detail || active] || '';
+    label.hidden = !label.textContent || active === 'overview';
+    stage.classList.toggle('inspection-view',active !== 'overview');
   }
   function select(view, feature='', instant=false) {
     setOrbit(false);
@@ -198,10 +209,15 @@ async function start() {
   function zoom(factor) {
     tween = null;
     const s = fromCamera();
+    clearSelection();
     s.distance = THREE.MathUtils.clamp(s.distance*factor, controls.minDistance, controls.maxDistance);
     apply(s);
   }
   presets.forEach(b => b.onclick = () => select(b.dataset.view));
+  parts.forEach(b => b.onclick = () => {
+    setOrbit(false); active = 'underbody'; detail = b.dataset.part;
+    reflect(); rememberView(); animateTo(desired());
+  });
   details.forEach(b => b.onclick = () => {
     select('', b.dataset.detail);
     const box = stage.getBoundingClientRect();
@@ -260,6 +276,11 @@ async function start() {
   canvas.addEventListener('webglcontextlost', e => {e.preventDefault(); $('stage-status').textContent='Restoring 3D viewer…'; $('stage-status').hidden=false;});
   canvas.addEventListener('webglcontextrestored', () => location.reload());
   resize(); reflect();
+  function haveFrame() {
+    $('stage-status').hidden = true;
+    $('studio-poster').hidden = true;
+  }
+  renderer.onPresented = haveFrame;
   function loop(now) {
     requestAnimationFrame(loop);
     if (document.hidden || !intersecting) {previous=0; return;}
@@ -276,7 +297,7 @@ async function start() {
     lighting(camera, controls.target, isolated);
     renderer.render(scene,camera);
     dirty = false;
-    $('stage-status').hidden = true;
+    if (!renderer.isSoftwareRenderer) haveFrame();
   }
   requestAnimationFrame(loop);
 }
