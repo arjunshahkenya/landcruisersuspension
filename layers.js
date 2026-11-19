@@ -1,5 +1,6 @@
 import * as THREE from './vendor/three.module.js';
 import { mergeGeometries } from './vendor/BufferGeometryUtils.js';
+import { buildCabin } from './model/cabin.js';
 import { buildBody } from './model/body.js';
 import { buildEnds } from './model/ends.js';
 import { buildAccessories } from './model/accessories.js';
@@ -46,7 +47,7 @@ export function vehicle() {
   const group = new THREE.Group();
   const exterior = new THREE.Group();
   const body = buildBody(THREE);
-  exterior.add(batch(body), batch(buildEnds(THREE)), batch(buildAccessories(THREE)));
+  exterior.add(batch(body), batch(buildCabin(THREE)), batch(buildEnds(THREE)), batch(buildAccessories(THREE)));
   group.add(exterior, buildChassis(THREE), buildWheels(THREE));
   return { group, exterior };
 }

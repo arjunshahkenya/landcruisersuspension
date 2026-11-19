@@ -37,9 +37,9 @@
   <main class="page">
     <section class="viewer-panel" aria-labelledby="vehicle-name">
       <div class="stage" id="stage">
-        <img id="studio-poster" src="./references/studio-poster.webp" alt="" fetchpriority="high">
+
         <canvas id="model-canvas" tabindex="0" aria-label="Interactive 3D model of the Toyota Land Cruiser. Drag to orbit, or use the camera view buttons below."></canvas>
-        <img id="stage-fallback" hidden alt="Front three-quarter photograph of the dark green Land Cruiser">
+
         <div class="vehicle-ident">
           <div class="eyebrow"><span class="eyebrow-line" aria-hidden="true"></span>TOYOTA <span class="slash" aria-hidden="true">/</span> 100 SERIES</div>
           <h1 id="vehicle-name">Land Cruiser V8</h1>
@@ -70,6 +70,16 @@
           <button type="button" data-view="roof" aria-pressed="false">Roof</button>
           <button type="button" data-view="underbody" aria-pressed="false">Underbody</button>
         </div>
+        <label class="closeup-select">
+          <svg class="icon" aria-hidden="true"><use href="#i-focus"/></svg>
+          <select id="select-detail" aria-label="Inspect a vehicle detail">
+            <option value="">Inspect a detail</option>
+            <option value="bumper">Front bumper</option>
+            <option value="wheel">All-terrain wheel</option>
+            <option value="rack">Roof rack</option>
+            <option value="spare">Spare carrier</option>
+          </select>
+        </label>
       </div>
       <div class="underbody-controls" id="underbody-controls" hidden>
         <p id="preset-note" hidden>Chassis and suspension are reconstructed from the 100 Series layout.</p>
@@ -81,15 +91,6 @@
       </div>
     </section>
 
-    <section class="details" aria-labelledby="detail-title">
-      <div class="section-heading"><h2 id="detail-title">Vehicle details</h2><p>Select a detail to inspect it in 3D.</p></div>
-      <div class="detail-grid" role="group" aria-label="Detail views">
-        <button type="button" class="detail-card" data-detail="bumper" aria-pressed="false"><span class="photo"><img src="./references/bumper.webp" alt="" loading="lazy"></span><span class="detail-caption">Front bumper<svg class="icon" aria-hidden="true"><use href="#i-focus"/></svg></span></button>
-        <button type="button" class="detail-card" data-detail="wheel" aria-pressed="false"><span class="photo"><img src="./references/wheel.webp" alt="" loading="lazy"></span><span class="detail-caption">All-terrain wheel<svg class="icon" aria-hidden="true"><use href="#i-focus"/></svg></span></button>
-        <button type="button" class="detail-card" data-detail="rack" aria-pressed="false"><span class="photo"><img src="./references/rack.webp" alt="" loading="lazy"></span><span class="detail-caption">Roof rack<svg class="icon" aria-hidden="true"><use href="#i-focus"/></svg></span></button>
-        <button type="button" class="detail-card" data-detail="spare" aria-pressed="false"><span class="photo"><img src="./references/spare.webp" alt="" loading="lazy"></span><span class="detail-caption">Rear carrier<svg class="icon" aria-hidden="true"><use href="#i-focus"/></svg></span></button>
-      </div>
-    </section>
   </main>
 
   <dialog id="controls-dialog" aria-labelledby="control-title">
@@ -97,7 +98,7 @@
     <dl>
       <div><dt>Orbit</dt><dd>Drag across the model, or focus it and use the arrow keys.</dd></div>
       <div><dt>Zoom</dt><dd>Scroll, pinch, or use the + and − buttons.</dd></div>
-      <div><dt>Inspect</dt><dd>Choose a camera view or select a detail photo for a closer look.</dd></div>
+      <div><dt>Inspect</dt><dd>Choose a camera view or use Inspect a detail for a close-up.</dd></div>
       <div><dt>Underbody</dt><dd>Choose Underbody to look up at the suspension. Select Isolate chassis to hide the bodywork.</dd></div>
     </dl>
   </dialog>

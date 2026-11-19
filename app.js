@@ -4,7 +4,7 @@ const stage = $('stage');
 const panel = stage.closest('.viewer-panel');
 const dialog = $('controls-dialog');
 const presets = [...document.querySelectorAll('[data-view]')];
-const details = [...document.querySelectorAll('[data-detail]')];
+const detailMenu = $('select-detail');
 const parts = [...document.querySelectorAll('[data-part]')];
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
 $('controls-open').onclick = () => dialog.showModal();
@@ -42,24 +42,13 @@ document.addEventListener('keydown', e => {
 function showFallback(error) {
   console.error('Viewer could not start', error);
   canvas.hidden = true;
-  $('studio-poster').hidden = true;
-  const photo = $('stage-fallback');
-  photo.src = './references/overview.webp';
-  photo.hidden = false;
   const status = $('stage-status');
-  status.textContent = 'The 3D model could not load. Reload to try again.';
+  status.textContent = 'The model could not load. Reload the page to try again.';
   status.hidden = false;
   stage.classList.add('unavailable');
-  document.querySelector('.section-heading p').textContent = 'Select a detail to see its reference photograph.';
+  detailMenu.disabled = true;
   presets.forEach(button => { button.disabled = true; });
   ['zoom-in','zoom-out','reset-view','toggle-orbit'].forEach(id => { $(id).disabled = true; });
-  const names = {bumper:'Front bumper', wheel:'All-terrain wheel', rack:'Roof rack', spare:'Rear carrier'};
-  details.forEach(button => button.onclick = () => {
-    photo.src = './references/' + button.dataset.detail + '.webp';
-    photo.alt = names[button.dataset.detail] + ' reference photograph';
-    details.forEach(b => b.setAttribute('aria-pressed', String(b === button)));
-    stage.scrollIntoView({block:'center', behavior:'instant'});
-  });
 }
 
 // Let the shell and loading status paint before constructing the geometry.
@@ -79,7 +68,7 @@ async function start() {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = .97;
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(32, 1, .035, 75);
+  const camera = new THREE.PerspectiveCamera(25, 1, .035, 100);
   const controls = new OrbitControls(camera,canvas);
   controls.enableDamping = true;
   controls.dampingFactor = .12;
@@ -92,25 +81,37 @@ async function start() {
   controls.autoRotateSpeed = .9;
   controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
   controls.cursor.set(0,.92,0);
+  // Present the first frame with the paint, glazing and lamps already textured.
+  const manager = THREE.DefaultLoadingManager;
+  let pendingMaps = false;
+  let finishMaterials;
+  const materialsLoaded = new Promise(resolve => { finishMaterials = resolve; });
+  manager.onStart = () => { pendingMaps = true; };
+  manager.onLoad = finishMaterials;
   const lighting = lightStudio(scene,context ? renderer : null);
   const model = vehicle();
+  if (pendingMaps) await materialsLoaded;
+  manager.onStart = undefined;
   scene.add(model.group);
   let active = 'overview', detail = '', isolated = false, inspection = false;
   let dirty = true, intersecting = true, tween = null, previous = 0;
   renderer.onReady = () => { dirty=true; };
   const pose = {
-    overview: [-1.24,.46,1.04], front: [0,.065,1], side: [-1,.065,.0001],
-    rear:[0,.075,-1], roof:[-.001,1,.00001], underbody:[-.055,-1,.003]
+    overview: [-.80,.197,1], front: [0,.012,1], side: [-1,.12,.0001],
+    rear:[0,.018,-1], roof:[-.001,1,.00001], underbody:[-.055,-1,.003]
   };
   const closeups = {
-    bumper: {target:[0,.84,2.26], dir:[-.45,.24,1], distance:2.75},
-    wheel: {target:[-.8,.44,1.42], dir:[-1,.14,.45], distance:1.8},
-    rack: {target:[0,1.92,-.64], dir:[-.92,.65,.72], distance:3.55},
-    spare: {target:[-.34,1.03,-2.5], dir:[-.32,.17,-1], distance:2.15},
-    'front-suspension': {target:[0,.43,1.35], dir:[-.38,-1,.44], distance:2.85, mechanical:true},
-    'rear-axle': {target:[0,.43,-1.41], dir:[-.34,-1,-.38], distance:2.75, mechanical:true}
+    bumper: {target:[0,.84,2.26], dir:[-.45,.24,1], distance:3.35},
+    wheel: {target:[-.8,.44,1.42], dir:[-1,.14,.45], distance:2.24},
+    rack: {target:[0,1.95,-1.12], dir:[-.92,.65,.72], distance:4.30},
+    spare: {target:[-.455,1.03,-2.70], dir:[-.32,.17,-1], distance:2.7},
+    'front-suspension': {target:[0,.43,1.35], dir:[-.38,-1,.44], distance:3.5, mechanical:true},
+    'rear-axle': {target:[0,.43,-1.41], dir:[-.34,-1,-.38], distance:3.4, mechanical:true}
   };
-  const titles = Object.fromEntries([...presets, ...details, ...parts].map(b => [b.dataset.view || b.dataset.detail || b.dataset.part, b.textContent.trim()]));
+  const titles = Object.fromEntries([
+    ...[...presets, ...parts].map(b => [b.dataset.view || b.dataset.part, b.textContent.trim()]),
+    ...[...detailMenu.options].filter(option => option.value).map(option => [option.value, option.text]),
+  ]);
   const requested = new URLSearchParams(location.search);
   if (Object.hasOwn(pose, requested.get('view'))) active = requested.get('view');
   if (Object.hasOwn(closeups, requested.get('detail'))) {
@@ -127,21 +128,21 @@ async function start() {
   const V = (x,y,z) => new THREE.Vector3(x,y,z);
   const pts = [];
   for (const sign of [-1,1]) {
-    for (const z of [-2.42,2.48]) {
+    for (const z of [-2.58,2.49]) {
       pts.push(V(sign*.97,.52,z),V(sign*.93,1.2,z));
     }
     for (const z of [-2.12,.30]) pts.push(V(sign*.79,1.88,z));
-    for (const z of [-1.46,-.02]) pts.push(V(sign*.63,2.04,z));
+    for (const z of [-1.68,-.56]) pts.push(V(sign*.65,2.05,z));
     for (const z of [-1.43,1.42]) pts.push(V(sign*.94,.018,z),V(sign*.94,.405,z-.405),V(sign*.94,.405,z+.405));
   }
-  pts.push(V(-.71,1.42,-2.68), V(.05,.59,-2.68));
+  pts.push(V(-.85,1.03,-2.78),V(-.06,1.03,-2.78),V(-.455,1.42,-2.78),V(-.455,.63,-2.78));
   function frame(direction, target) {
     const right = new THREE.Vector3().crossVectors(camera.up,direction).normalize();
     const up = new THREE.Vector3().crossVectors(direction,right);
     const vertical = Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
     const mobile = stage.clientWidth < 640;
     const horizontalFactor = mobile ? .90 : .86;
-    const verticalFactor = mobile ? .63 : .75;
+    const verticalFactor = mobile ? .64 : .73;
     return Math.max(...pts.map(p => {
       const v = p.clone().sub(target);
       return v.dot(direction) + Math.max(Math.abs(v.dot(right))/(vertical*camera.aspect*horizontalFactor), Math.abs(v.dot(up))/(vertical*verticalFactor));
@@ -183,7 +184,7 @@ async function start() {
   }
   function reflect() {
     presets.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === active && !detail)));
-    details.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.detail === detail)));
+    detailMenu.value = closeups[detail]?.mechanical ? '' : detail;
     parts.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.part === detail)));
     $('underbody-controls').hidden = !inspection;
     const b = $('chassis-toggle');
@@ -218,13 +219,10 @@ async function start() {
     setOrbit(false); active = 'underbody'; detail = b.dataset.part;
     reflect(); rememberView(); animateTo(desired());
   });
-  details.forEach(b => b.onclick = () => {
-    select('', b.dataset.detail);
-    const box = stage.getBoundingClientRect();
-    if (box.top < -32 || box.bottom < window.innerHeight*.4) {
-      stage.scrollIntoView({behavior:reduced.matches ? 'instant' : 'smooth',block:'center'});
-    }
-  });
+  detailMenu.onchange = () => {
+    if (detailMenu.value) select('', detailMenu.value);
+    else select('overview');
+  };
   $('zoom-in').onclick = () => zoom(.82);
   $('zoom-out').onclick = () => zoom(1/.82);
   $('reset-view').onclick = () => select('overview');
@@ -278,7 +276,6 @@ async function start() {
   resize(); reflect();
   function haveFrame() {
     $('stage-status').hidden = true;
-    $('studio-poster').hidden = true;
   }
   renderer.onPresented = haveFrame;
   function loop(now) {

@@ -104,6 +104,12 @@ export function buildAccessories(THREE) {
   const sides = [-1, 1];
   const rack = group('Raised aluminium roof basket');
   const base = group('Factory longitudinal roof rails');
+  // The OE towers sit lower than the top of the roof crown, near its shoulders.
+  // Compress their vertical rise and the basket profile to the measured stack.
+  base.scale.y = .80;
+  base.position.y = .357;
+  rack.scale.y = .91;
+  rack.position.y = .140;
   for (const side of sides) {
     const x = side * .67;
     // OE track follows the crown; three feet hold each raised longitudinal rail.
@@ -113,11 +119,12 @@ export function buildAccessories(THREE) {
     ]);
     for (const [hubZ, length] of [[-1.89,.25], [-1.08,.16], [-.28,.27]]) {
       const rear = hubZ - length / 2, nose = hubZ + length / 2;
-      shapedBar(base, 'Contoured roof rail pedestal', polymer, [
+      const pedestal = shapedBar(base, 'Contoured roof rail pedestal', polymer, [
         [x, 1.86, rear, .044, .012], [x, 1.876, rear + .038, .078, .042],
         [x, 1.901, hubZ, .087, .075], [x, 1.885, nose - .04, .075, .054],
         [x, 1.859, nose, .048, .014],
       ]);
+      if (hubZ < -1.5) pedestal.position.y -= .016;
     }
     shapedBar(base, 'Elliptical factory rail', stepAlloy, [
       [x,1.87,-1.988,.054,.023], [x,1.904,-1.944,.060,.041],
@@ -200,8 +207,9 @@ export function buildAccessories(THREE) {
 
   for (const side of sides) {
     const mirror = group(side<0 ? 'Right door mirror' : 'Left door mirror');
+    mirror.position.set(0,-.018,-.085);
     const pivot = [side*.934,1.335,.69];
-    const shellX=side*1.025, shellY=1.388, shellZ=.655;
+    const shellX=side*1.025, shellY=1.368, shellZ=.630;
     // Triangular base is rubber, with a narrow weatherstrip and a short folding neck.
     shapedBar(mirror,'Mirror base at front quarterlight',rubber,[
       [side*.906,1.328,.606,.048,.042], [side*.913,1.363,.629,.071,.114],
@@ -211,6 +219,7 @@ export function buildAccessories(THREE) {
     const head=group('Door mirror head',mirror);
     head.position.set(shellX,shellY,shellZ);
     head.rotation.y=side*.165;
+    head.scale.set(1.10,1.12,1.07);
     const ring=(w,h,z,dx=0,dy=0)=>roundSection(dx*side,dy,z,w,h,.50,-side*.0065);
     mesh(head,'Painted mirror housing',loft([
       ring(.204,.142,-.042),ring(.224,.149,-.033),ring(.232,.147,.006),

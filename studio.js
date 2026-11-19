@@ -1,56 +1,94 @@
 import * as THREE from './vendor/three.module.js';
-import { RoomEnvironment } from './vendor/RoomEnvironment.js';
+import { skyRadiance } from './software-shading.js';
+
+function reflectionEnvironment(renderer) {
+  const width=512, height=256, pixels=new Float32Array(width*height*4), radiance=[0,0,0];
+  for(let row=0;row<height;row++) {
+    const elevation=((row+.5)/height-.5)*Math.PI;
+    const y=Math.sin(elevation), radius=Math.cos(elevation);
+    for(let col=0;col<width;col++) {
+      const angle=((col+.5)/width-.5)*Math.PI*2;
+      skyRadiance(radius*Math.cos(angle), y, radius*Math.sin(angle), radiance);
+      const i=(row*width+col)*4;
+      pixels[i]=radiance[0];pixels[i+1]=radiance[1];pixels[i+2]=radiance[2];pixels[i+3]=1;
+    }
+  }
+  const texture=new THREE.DataTexture(pixels,width,height,THREE.RGBAFormat,THREE.FloatType);
+  texture.mapping=THREE.EquirectangularReflectionMapping;
+  texture.needsUpdate=true;
+  const prefilter=new THREE.PMREMGenerator(renderer);
+  const environment=prefilter.fromEquirectangular(texture);
+  texture.dispose();prefilter.dispose();
+  return environment.texture;
+}
 
 export function lightStudio(scene, renderer) {
-  if (renderer) {
-    const generator = new THREE.PMREMGenerator(renderer);
-    const room = new RoomEnvironment(renderer);
-    const environment = generator.fromScene(room, .035);
-    scene.environment = environment.texture;
-    room.dispose();
-    generator.dispose();
+  if(renderer) {
+    scene.environment=reflectionEnvironment(renderer);
+    renderer.shadowMap.enabled=true;
+    renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   }
+  scene.add(new THREE.HemisphereLight(0xe0ecff,0x897b68,.43));
+  function softbox(color,intensity,x,y,z) {
+    const light=new THREE.DirectionalLight(color,intensity);
+    light.position.set(x,y,z); scene.add(light);return light;
+  }
+  const key=softbox(0xfff2dd,2.05,-3.9,5.6,4.15);
+  if(renderer){
+    key.castShadow=true;
+    key.shadow.mapSize.set(2048,2048);
+    const c=key.shadow.camera;
+    c.left=-3.6;c.right=3.6;c.bottom=-2.9;c.top=3.1;c.near=.4;c.far=14;c.updateProjectionMatrix();
+    key.shadow.bias=-.00016;key.shadow.normalBias=.012;
+  }
+  softbox(0xd2e5ff,.78,4.2,2.1,-3.6);
+  const lift=softbox(0xf2eddd,0,-1.2,-4,1.4);
 
-  scene.add(new THREE.HemisphereLight(0xf6fcff, 0xb8afa1, .92));
-  function softbox(color, intensity, x, y, z) {
-    const light = new THREE.DirectionalLight(color, intensity);
-    light.position.set(x, y, z);
-    scene.add(light);
-    return light;
+  const canvas=document.createElement('canvas');
+  canvas.width=400;canvas.height=640;
+  const ctx=canvas.getContext('2d');
+  function shadow(x,y,sx,sy,strength){
+    ctx.save();ctx.translate(x,y);ctx.scale(sx,sy);
+    const g=ctx.createRadialGradient(0,0,0,0,0,1);
+    g.addColorStop(0,'rgba(34,39,33,'+strength+')');
+    g.addColorStop(.38,'rgba(34,39,33,'+strength*.83+')');
+    g.addColorStop(.72,'rgba(34,39,33,'+strength*.26+')');
+    g.addColorStop(1,'rgba(34,39,33,0)');
+    ctx.fillStyle=g;ctx.fillRect(-1,-1,2,2);ctx.restore();
   }
-  softbox(0xfff4e4, 2.35, -3, 6, 4);
-  softbox(0xe6f4ff, .92, 4, 3, -3);
-  const lift = softbox(0xf0f5ff, 0, -.9, -4, .8);
-
-  // A feathered contact shadow anchors the car without a ground surface
-  // that could obscure the suspension as the camera passes below the tires.
-  const canvas = document.createElement('canvas');
-  canvas.width = 320; canvas.height = 640;
-  const ctx = canvas.getContext('2d');
-  function shadow(x, y, sx, sy, strength) {
-    ctx.save();
-    ctx.translate(x, y); ctx.scale(sx, sy);
-    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-    gradient.addColorStop(0, 'rgba(35,40,35,' + strength + ')');
-    gradient.addColorStop(.44, 'rgba(35,40,35,' + strength * .78 + ')');
-    gradient.addColorStop(1, 'rgba(35,40,35,0)');
-    ctx.fillStyle = gradient; ctx.fillRect(-1,-1,2,2);
-    ctx.restore();
+  // Coordinates follow the four actual ground contact patches. The long penumbra
+  // belongs to the raised body, while the tight dark marks belong to the tires.
+  shadow(208,317,153,285,.36);
+  shadow(192,318,113,228,.23);
+  for(const x of [120,280]) for(const y of [188,453]){
+    shadow(x,y,32,42,.35);
+    shadow(x,y,15,17,.71);
   }
-  shadow(158,317,150,310,.30);
-  for (const y of [186,312,458]) shadow(161,y,109,149,.22);
-  for (const x of [96,224]) for (const y of [186,452]) shadow(x,y,23,43,.54);
-  const material = new THREE.MeshBasicMaterial({
-    map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite:false, toneMapped:false
-  });
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(4, 6.9), material);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -.014;
-  scene.add(ground);
-  return function updateStudio(camera, target, chassisOnly) {
-    const elevation = camera.position.clone().sub(target).normalize().y;
-    ground.visible = elevation > -.025 && camera.position.y > .04 && !chassisOnly;
-    material.opacity = THREE.MathUtils.smoothstep(elevation, -.025, .15);
-    lift.intensity = .18 + 2.0 * (1 - THREE.MathUtils.smoothstep(elevation, -.8, .03));
+  const map=new THREE.CanvasTexture(canvas);
+  map.colorSpace=THREE.SRGBColorSpace;
+  const material=new THREE.MeshBasicMaterial({map,transparent:true,depthWrite:false,toneMapped:false});
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(4,6.9),material);
+  ground.name='Feathered contact shadows';
+  ground.rotation.x=-Math.PI/2;ground.position.y=-.008;scene.add(ground);
+  let configured=false, isolated=null;
+  return function updateStudio(camera,target,chassisOnly) {
+    const elevation=camera.position.clone().sub(target).normalize().y;
+    ground.visible=elevation>-.025 && camera.position.y>.04 && !chassisOnly;
+    material.opacity=THREE.MathUtils.smoothstep(elevation,-.025,.15);
+    lift.intensity=.15+2.15*(1-THREE.MathUtils.smoothstep(elevation,-.8,.04));
+    if(renderer && (!configured || chassisOnly!==isolated)) {
+      if(!configured) {
+        scene.traverse(mesh=>{
+          if(!mesh.isMesh || mesh===ground)return;
+          const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+          mesh.castShadow=mats.every(m=>!m.transparent || m.opacity>.94);
+          mesh.receiveShadow=true;
+        });
+        renderer.shadowMap.autoUpdate=false;
+        configured=true;
+      }
+      renderer.shadowMap.needsUpdate=true;
+      isolated=chassisOnly;
+    }
   };
 }

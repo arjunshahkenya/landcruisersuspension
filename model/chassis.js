@@ -387,6 +387,43 @@ export function buildChassis(THREE) {
   for(const [y,z] of [[.352,1.757],[.379,1.845],[.42,1.944]]) {
     box([0,y,z],[.56,.021,.031],bracket);
   }
+  // The radiator core is visible through the lower gaps around the recovery
+  // bumper. Its rear shroud faces the axle, beneath the bonnet.
+  box([0,.905,1.965],[1.03,.505,.048],dark);
+  for (const side of [-1,1]){
+    stamping([[side*.535,.908,1.925,.060,.482],[side*.537,.908,1.946,.078,.520],
+      [side*.536,.908,1.994,.066,.498]],frame,.014);
+    footBolt(side*.523,.648,1.966,.013);
+  }
+  for(let i=0;i<42;i++){
+    const y=.665+i*.0115;
+    box([0,y,1.990],[1.016,.0024,.0045],bracket);
+  }
+  // Stamped heat shield, with upturned ends spaced above the exhaust silencer.
+  stamping([[-.29,.606,-.794,.16,.016],[-.29,.59,-.747,.308,.013],
+    [-.29,.584,-.687,.322,.018],[-.29,.580,-.108,.342,.018],
+    [-.29,.586,-.04,.321,.014],[-.29,.604,.018,.205,.014]],caseMetal,.006);
+  for(const x of [-.42,-.16]) for(const z of [-.685,-.112]) footBolt(x,.58,z,.008);
+  // Drain/filler plugs and stamped retaining clips on the service lines.
+  shaft([.049,.244,-1.433],[.049,.252,-1.433],.018,fastener,6);
+  shaft([.063,.397,-1.590],[.063,.397,-1.580],.0175,fastener,6);
+  footBolt(-.103,.396,1.49,.0125);
+  for(const s of [-1,1]){
+    for(const [z,x,y] of [[-1.63,.449,.621],[-1.28,.456,.622],[-.76,.478,.481],[-.30,.475,.461],[.19,.466,.459],[.62,.444,.472],[1.19,.359,.524]]){
+      box([s*x,y,z],[.036,.017,.024],rubber);
+      shaft([s*(x+.011),y-.007,z],[s*(x+.011),y+.008,z],.0074,fastener,6);
+    }
+    // Spring-retaining pad and fasteners for the small brake-backing plate.
+    const cx=s*.48;
+    for(const off of [-.073,.073]) footBolt(cx+off,.449,-1.445,.009);
+  }
+  let underseal = null;
+  if (typeof document !== 'undefined') {
+    underseal = new THREE.TextureLoader().load(new URL('./assets/underseal-grain.webp',import.meta.url).href);
+    underseal.colorSpace=THREE.SRGBColorSpace;
+    underseal.wrapS=underseal.wrapT=THREE.RepeatWrapping;
+    underseal.anisotropy=4;
+  }
   for (const [surface, parts] of batches) {
     const position = [], normal = [], indices = [];
     let vertexOffset = 0;
@@ -403,6 +440,20 @@ export function buildChassis(THREE) {
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position',new THREE.Float32BufferAttribute(position,3));
     geo.setAttribute('normal',new THREE.Float32BufferAttribute(normal,3));
+    if (underseal && surface !== fastener && surface !== dark && surface !== stainless) {
+      const uv = new Float32Array(vertexOffset*2);
+      // Project the same physical grain scale onto rails, castings and brackets.
+      for (let i=0;i<vertexOffset;i++) {
+        const k=i*3, x=position[k],y=position[k+1],z=position[k+2];
+        const ax=Math.abs(normal[k]), ay=Math.abs(normal[k+1]), az=Math.abs(normal[k+2]);
+        if (ay>=ax && ay>=az) { uv[i*2]=x*2.7;uv[i*2+1]=z*2.7; }
+        else if (ax>=az) { uv[i*2]=z*2.7;uv[i*2+1]=y*2.7; }
+        else { uv[i*2]=x*2.7;uv[i*2+1]=y*2.7; }
+      }
+      geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+      surface.map=underseal;
+      surface.color.multiplyScalar(1.38);
+    }
     geo.setIndex(indices);
     geo.computeBoundingSphere();
     const mesh=new THREE.Mesh(geo,surface);

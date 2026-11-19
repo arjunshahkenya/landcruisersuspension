@@ -8,12 +8,15 @@ function prepareScene(scene, T) {
     const id=materials.length, c=mat.color || new T.Color(0xffffff);
     const display=c.clone().convertLinearToSRGB();
     const map=mat.map?.uuid || '';
-    if(map) textures.set(map,mat.map);
+    const roughMap=mat.roughnessMap?.uuid || '', metalMap=mat.metalnessMap?.uuid || '';
+    for(const tex of [mat.map,mat.roughnessMap,mat.metalnessMap]){
+      if(tex)textures.set(tex.uuid,tex);
+    }
     materialIds.set(mat,id);
     materials.push({
       color:{r:c.r,g:c.g,b:c.b},display:[255*display.r,255*display.g,255*display.b],
       metalness:mat.metalness,roughness:mat.roughness,clearcoat:mat.clearcoat,
-      map,transparent:mat.transparent,alphaTest:mat.alphaTest||0,side:mat.side,
+      map,roughMap,metalMap,envMapIntensity:mat.envMapIntensity,clearcoatRoughness:mat.clearcoatRoughness,transparent:mat.transparent,alphaTest:mat.alphaTest||0,side:mat.side,
       depthWrite:mat.depthWrite, basic:mat.isMeshBasicMaterial===true,
       offset:mat.polygonOffset ? -mat.polygonOffsetUnits*.0000002 : 0
     });
@@ -53,8 +56,21 @@ function prepareScene(scene, T) {
       if(a>=b||!material)continue;
       const ancestors=[];
       for(let p=object;p;p=p.parent) ancestors.push(p);
-      const ground=!!material.isMeshBasicMaterial&&material.transparent&&!!material.map;
-      meshes.push({positions,normals,uv:material.map?uv:null,colors:material.vertexColors?color:null,indices,start:a,count:b-a,material:materialId(material),ground,
+      const ground=object.name==='Feathered contact shadows';
+      let mapUV=material.map?uv:null;
+      if(mapUV){
+        const texture=material.map;
+        if(texture.matrixAutoUpdate)texture.updateMatrix();
+        const e=texture.matrix.elements;
+        if(e[0]!==1||e[1]!==0||e[3]!==0||e[4]!==1||e[6]!==0||e[7]!==0){
+          mapUV=uv.slice();
+          for(let t=0;t<uv.length;t+=2){
+            mapUV[t]=e[0]*uv[t]+e[3]*uv[t+1]+e[6];
+            mapUV[t+1]=e[1]*uv[t]+e[4]*uv[t+1]+e[7];
+          }
+        }
+      }
+      meshes.push({positions,normals,uv:mapUV,colors:material.vertexColors?color:null,indices,start:a,count:b-a,material:materialId(material),ground,
         order:object.renderOrder,frontSign:object.matrixWorld.determinant()<0?-1:1,center:[(x0+x1)/2,(y0+y1)/2,(z0+z1)/2],
         radius:Math.hypot(x1-x0,y1-y0,z1-z0)/2});
       objects.push({ancestors,material});
@@ -73,7 +89,7 @@ function readTexture(texture) {
   element.width=width;element.height=height;
   const ctx=element.getContext('2d',{willReadFrequently:true});
   ctx.drawImage(image,0,0,width,height);
-  return {key:texture.uuid,width,height,flipY:texture.flipY,pixels:ctx.getImageData(0,0,width,height).data};
+  return {key:texture.uuid,width,height,flipY:texture.flipY,wrapS:texture.wrapS,wrapT:texture.wrapT,pixels:ctx.getImageData(0,0,width,height).data};
 }
 
 export async function createSoftwareRenderer(canvas, THREE) {
@@ -144,8 +160,8 @@ export async function createSoftwareRenderer(canvas, THREE) {
   function enqueue(request) {
     if(inFlight) {pending=request;return;}
     const final=request.final;
-    const limit=final?1200:760, budget=final?820000:245000;
-    const scale=Math.min(final ? pixelRatio*1.15 : pixelRatio,limit/Math.max(1,width,height),Math.sqrt(budget/Math.max(1,width*height)));
+    const limit=final?1840:760, budget=final?1450000:245000;
+    const scale=Math.min(final ? Math.max(pixelRatio,1.55) : pixelRatio,limit/Math.max(1,width,height),Math.sqrt(budget/Math.max(1,width*height)));
     const w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
     const payload={...request,width:w,height:h};
     if(worker) {

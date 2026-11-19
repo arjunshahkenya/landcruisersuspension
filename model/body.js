@@ -1,3 +1,6 @@
+import { buildWheelTubs } from './wheel-tubs.js';
+import { applySideSurface, applyBonnetSurface } from './surfaces.js';
+
 // Land Cruiser 100-series bodywork. Longitudinal coordinates are measured from
 // the middle of the photographed wheelbase. The front is toward positive Z.
 export function buildBody(THREE) {
@@ -18,16 +21,14 @@ export function buildBody(THREE) {
   const rubber = std(0x121516,.79,.02);
   const panelGap = std(0x132625,.8,.04);
   const concealed = std(0x252822,.8,.08,{side:THREE.DoubleSide});
-  const seatMaterial = std(0x615e53,.74);
-  const seatInsert = std(0x534f44,.81);
-  const charcoal = std(0x292e2c,.73);
-  const lining = std(0x6d695d,.87);
   const pane = (color, opacity, roughness) => new THREE.MeshPhysicalMaterial({
     color, metalness:.17, roughness, clearcoat:1, clearcoatRoughness:.08,
     transparent:true, opacity, depthWrite:false, side:THREE.DoubleSide, envMapIntensity:.88
   });
-  const frontGlass = pane(0x8fa7ad,.34,.12);
-  const driverGlass = pane(0x627b82,.46,.14);
+  const frontGlass = pane(0x657f89,.385,.135);
+  frontGlass.metalness=.19;frontGlass.clearcoat=.72;frontGlass.envMapIntensity=1.04;
+  const driverGlass = pane(0x56717d,.615,.135);
+  driverGlass.metalness=.24;driverGlass.clearcoat=.69;driverGlass.envMapIntensity=1.09;
   const privacyGlass = pane(0x24333e,.88,.15);
   const backGlass = pane(0x374248,.72,.14);
   const deflectorGlass = pane(0x292c32,.79,.20);
@@ -69,10 +70,6 @@ export function buildBody(THREE) {
     const points = Array.from({length:resolution+1},(_,i)=>fn(i/resolution));
     return tube(name,points,radius,material,resolution);
   }
-  function box(name,x,y,z,w,h,d,material) {
-    const m=part(name,new THREE.BoxGeometry(w,h,d),material);
-    m.position.set(x,y,z);return m;
-  }
   function squab(name,x,y,z,w,h,d,material,exponent=.43) {
     const power=(v,e)=>Math.sign(v)*Math.pow(Math.abs(v),e);
     const mesh=grid(name,36,16,(u,v)=>{
@@ -81,153 +78,202 @@ export function buildBody(THREE) {
     },material,V(-1,0,0));
     mesh.position.set(x,y,z);return mesh;
   }
-  function profile(z,points) {
-    if(z<=points[0][0]) return points[0][1];
-    for(let i=1;i<points.length;i++){
-      if(z<=points[i][0]){
-        const [a,av]=points[i-1],[b,bv]=points[i];
-        return mix(av,bv,smooth(z,a,b));
+  // A shape-preserving cubic maintains a continuous tangent between body
+  // stations without flattening the sheet metal at every measured landmark.
+  function curve(anchors){
+    const widths=anchors.slice(1).map(([x],i)=>x-anchors[i][0]);
+    const slopes=widths.map((w,i)=>(anchors[i+1][1]-anchors[i][1])/w);
+    const tangents=anchors.map((_,i)=>{
+      if(i===0)return slopes[0];
+      if(i===slopes.length)return slopes.at(-1);
+      if(slopes[i-1]*slopes[i]<=0)return 0;
+      const a=2*widths[i]+widths[i-1],b=widths[i]+2*widths[i-1];
+      return (a+b)/(a/slopes[i-1]+b/slopes[i]);
+    });
+    return x=>{
+      if(x<=anchors[0][0])return anchors[0][1];
+      for(let i=0;i<widths.length;i++){
+        if(x>anchors[i+1][0])continue;
+        const t=(x-anchors[i][0])/widths[i],t2=t*t,t3=t2*t;
+        return (2*t3-3*t2+1)*anchors[i][1]+(t3-2*t2+t)*widths[i]*tangents[i]+
+          (-2*t3+3*t2)*anchors[i+1][1]+(t3-t2)*widths[i]*tangents[i+1];
       }
-    }
-    return points[points.length-1][1];
+      return anchors.at(-1)[1];
+    };
   }
 
-  const frontAxle=1.42,rearAxle=-1.43,archRadius=.475;
-  // The arches are actual openings. Their lips and the inner returns share the
-  // same parametric boundary as the fenders and the two-tone rocker skins.
-  const widthStations=[[-2.26,.886],[-2.09,.919],[-1.66,.931],[-.65,.925],[.49,.926],[1.39,.929],[1.94,.914],[2.245,.866]];
-  const rimTop=[[-2.26,1.254],[-1.89,1.278],[-.65,1.292],[.67,1.296],[.96,1.285],[1.54,1.246],[1.95,1.213],[2.245,1.182]];
-  const sill=[[-2.26,.656],[-1.99,.525],[-1.65,.501],[.82,.494],[1.80,.514],[2.245,.712]];
-  const z0=-2.26,z1=2.245,bicolor=.771;
-  function low(z){
-    const dz=Math.min(Math.abs(z-frontAxle),Math.abs(z-rearAxle));
-    const arc=dz<archRadius ? .405+Math.sqrt(archRadius*archRadius-dz*dz) : 0;
-    return Math.max(profile(z,sill),arc);
-  }
-  const top=z=>profile(z,rimTop);
+  const z0=-2.366,z1=2.15;
+  const width=curve([[-2.366,.833],[-2.29,.868],[-2.26,.880],[-2.17,.895],[-1.97,.910],[-1.63,.917],[-1.12,.913],[-.40,.910],[.33,.914],[.74,.918],[1.12,.920],[1.52,.923],[1.83,.920],[2.00,.917],[2.15,.912]]);
+  const top=curve([[-2.366,1.242],[-2.26,1.245],[-1.85,1.253],[-1.22,1.259],[-.40,1.270],[.25,1.275],[.70,1.267],[.94,1.265],[1.18,1.258],[1.52,1.241],[1.78,1.224],[1.99,1.197],[2.15,1.178]]);
+  const silverLine=curve([[-2.26,.789],[-1.48,.802],[-.56,.813],[.72,.819],[1.65,.832],[2.15,.837]]);
+  // These are the arch outlines, rocker ends and bumper junctions traced on
+  // the owner's side photograph. Each wheel opening has its own shape.
+  const low=curve([[-2.26,.708],[-2.01,.709],[-1.960,.710],[-1.926,.726],[-1.887,.766],[-1.839,.802],[-1.76,.832],[-1.67,.850],[-1.52,.861],[-1.37,.864],[-1.22,.856],[-1.143,.834],[-1.079,.791],[-1.018,.704],[-.967,.595],[-.940,.527],[-.917,.494],[-.889,.486],[-.32,.481],[.334,.488],[.866,.489],[.913,.492],[.935,.526],[.966,.606],[1.012,.714],[1.065,.800],[1.132,.866],[1.211,.903],[1.299,.927],[1.390,.935],[1.496,.934],[1.591,.927],[1.680,.911],[1.772,.882],[1.826,.854],[1.858,.842],[1.923,.844],[2.15,.852]]);
+  const lowerWidth=curve([[.48,-.060],[.50,-.038],[.526,-.018],[.558,-.012],[.642,-.005],[.729,.000],[.792,.002],[.835,.001],[.94,-.002],[1.033,.000],[1.11,.005],[1.182,.008],[1.235,.002],[1.28,-.010]]);
+  const gaussian=(x,center,spread)=>Math.exp(-(((x-center)/spread)**2));
+  const indicatorLower=curve([[1.92,1.119],[1.95,1.111],[2.00,1.080],[2.07,1.030],[2.12,.980],[2.15,.950]]);
   function sideX(z,y){
-    const proximity=Math.min(Math.hypot(z-frontAxle,y-.405),Math.hypot(z-rearAxle,y-.405));
-    const flare=.042*Math.exp(-Math.pow((proximity-.525)/.11,2));
-    const crown=.011*Math.exp(-Math.pow((y-.97)/.19,2));
-    const shoulder=-.026*smooth(y,1.085,top(z))-.009*(1-smooth(y,.52,.72));
-    return profile(z,widthStations)+flare+crown+shoulder;
+    const signFront=z>0,axle=signFront?1.42:-1.43;
+    const wheelFoot=1-smooth(Math.abs(z-axle),signFront?.364:.315,signFront?.719:.659);
+    const dz=z-axle;
+    // The broad stamped brow has a much flatter upper arc than the wheel
+    // opening. Keeping these two curves independent avoids a tubular lip.
+    const brow=(signFront?1.117:1.068)-.120*(dz/.56)**2+.012*dz;
+    const flare=wheelFoot*(.028*gaussian(y,brow-.055,.139)+.006*gaussian(y,brow,.060)+
+      .016*gaussian(y,brow-.158,.213));
+    const shoulder=.005*gaussian(y,top(z)-.078,.047);
+    // Three softly rolled lines on the silver door protectors; the lip is
+    // pressed into the width of the panel, so it follows the wheel openings.
+    const belt=silverLine(z);
+    const rib= y<=belt ? (.008*gaussian(y,belt-.012,.013)-.003*gaussian(y,belt-.055,.007)-.0032*gaussian(y,belt-.148,.008)) : 0;
+    const tip=smooth(z,1.80,z1);
+    // The indicator rolls from the front face into a pocket in the wing.
+    const lip=indicatorLower(z);
+    const pocket=tip*(.018+.072*smooth(y,lip-.020,lip+.014)*(1-smooth(y,1.147,1.179)));
+    return width(z)+lowerWidth(y)+flare+shoulder+rib-pocket;
   }
-  const sidePoint=(sign,z,y,offset=0)=>V(sign*(sideX(z,y)+offset),y,z);
+  const sidePoint=(s,z,y,d=0)=>V(s*(sideX(z,y)+d),y,z);
+  const bodyLower=(z)=>low(z)+.001;
+  const flareSpans=[[-1.94,-.932],[.912,1.86]];
+  const projection=(m,k)=>applySideSurface(THREE,m,k);
   for(const s of [-1,1]){
     const side=s<0?'right':'left';
-    grid(side+' silver lower body',182,8,(u,v)=>{
-      const z=mix(z0,z1,u), lowY=low(z),upper=Math.max(lowY,bicolor);
-      return sidePoint(s,z,mix(lowY,upper,v),.002);
+    // The quarter, two doors and the front fender are separately formed panels.
+    // The opening and the raised flare are a single continuous curved stamping.
+    const silverSkin=grid(side+' contoured silver protector',240,31,(u,v)=>{
+      const z=mix(z0,z1,u),bottom=bodyLower(z),end=Math.max(bottom,silverLine(z)-.001);
+      return sidePoint(s,z,mix(bottom,end,v),.002);
     },silver,V(s,0,0));
-    grid(side+' sculpted fenders and door skins',182,23,(u,v)=>{
-      const z=mix(z0,z1,u),y=mix(Math.max(bicolor,low(z)),top(z),v);
+    projection(silverSkin,'cladding');
+    const outer=grid(side+' shaped side body and integral arch blisters',240,42,(u,v)=>{
+      const z=mix(z0,z1,u),y=mix(Math.max(silverLine(z),bodyLower(z)),top(z),v);
       return sidePoint(s,z,y);
     },paint,V(s,0,0));
-    grid(side+' wheel housings and pinchweld return',182,5,(u,v)=>{
-      const z=mix(z0,z1,u),y=low(z);
-      return V(s*mix(sideX(z,y),.715,v),y+v*.016,z);
+    projection(outer,'paint');
+    grid(side+' folded rocker and wheel-well return',240,6,(u,v)=>{
+      const z=mix(z0,z1,u),yl=low(z);
+      return V(s*mix(sideX(z,yl)-.001,.716,v),yl+.015*v-.008*Math.sin(Math.PI*v),z);
     },concealed,V(0,-1,0));
-
-    // Three separate pieces of side cladding, interrupted at both wheel arches.
-    for(const [start,end] of [[z0,-1.77],[-1.09,1.08],[1.76,z1]]){
-      for(const [y,r,mat] of [[.774,.005,polished],[.751,.006,silver],[.641,.0027,concealed],[.605,.0027,silver]]){
-        let section=[];
-        const flush=()=>{
-          if(section.length>2)tube('moulded rocker detail',section,r,mat,section.length);
-          section=[];
-        };
-        for(let i=0;i<=70;i++){
-          const z=mix(start,end,i/70);
-          if(y>low(z)+.004) section.push(sidePoint(s,z,y,.0035));
-          else flush();
-        }
-        flush();
+    // Inward curl of the pressed-steel arch. A narrow dark hem follows the
+    // fender circumference without hiding the outer color at its crown.
+    for(const [a,b] of flareSpans){
+      edge(side+' arch flange and liner joint',t=>{
+        const z=mix(a,b,t),y=low(z)-.002;
+        return sidePoint(s,z,y,-.010);
+      },.0044,rubber,86);
+    }
+    function interruptedEdge(name,yAt,r,mat,offset=.0028){
+      let coords=[];
+      const flush=()=>{if(coords.length>1)tube(name,coords,r,mat,coords.length);coords=[];};
+      for(let i=0;i<=290;i++){
+        const z=mix(z0,z1,i/290),y=yAt(z);
+        if(y>low(z)+.008)coords.push(sidePoint(s,z,y,offset));else flush();
       }
+      flush();
     }
-    // Arched highlight, rolled black inner lip and front/rear quarter flares.
-    for(const center of [frontAxle,rearAxle]){
-      const halfAngle=Math.acos((.525-.405)/archRadius);
-      edge(side+' rolled arch lip',u=>{
-        const a=mix(-halfAngle,halfAngle,u),y=.405+archRadius*Math.cos(a),z=center+archRadius*Math.sin(a);
-        return sidePoint(s,z,y,-.002);
-      },.0085,rubber,48);
-      grid(side+' pressed arch flare',50,7,(u,v)=>{
-        const a=mix(-halfAngle,halfAngle,u);
-        const r=archRadius+.012+.157*v;
-        const y=.405+r*Math.cos(a),z=center+r*Math.sin(a);
-        const strength=Math.sin(Math.PI*v)**1.7*Math.sin(Math.PI*u)**.44;
-        return sidePoint(s,z,y,.002+.015*strength);
-      },paint,V(s,0,0));
+    interruptedEdge('upper polished trim reveal',z=>silverLine(z)-.002,.0035,polished);
+    interruptedEdge('body side moulding contact seam',z=>silverLine(z)+.0012,.0022,panelGap,.0011);
+    const sourcePath=coords=>new THREE.CatmullRomCurve3(coords.map(([z,y])=>V(z,y,0)),false,'centripetal');
+    function doorPath(name,coords,width=.0058){
+      const path=sourcePath(coords);
+      grid(side+' '+name,Math.max(coords.length*6,60),4,(u,v)=>{
+        const p=path.getPoint(u),t=path.getTangent(u),d=(v-.5)*width;
+        return sidePoint(s,p.x-d*t.y,p.y+d*t.x,.0024+.0018*Math.abs(2*v-1));
+      },panelGap,V(s,0,0));
     }
-    const doorPath=(name,coords)=>{
-      const path=new THREE.CatmullRomCurve3(coords.map(([z,y])=>V(z,y,0)),false,'centripetal');
-      edge(side+' '+name,u=>{
-        const p=path.getPoint(u);
-        return sidePoint(s,p.x,p.y,.0046);
-      },.0031,panelGap,60);
-    };
-    doorPath('front door shut line',[[.818,1.296],[.868,1.22],[.889,1.08],[.891,.82],[.878,.647],[.853,.557],[.819,.516],[.735,.509],[.19,.508],[-.283,.512],[-.312,.53],[-.325,.63],[-.331,.955],[-.34,1.30]]);
-    doorPath('rear door shut line',[[-.34,1.30],[-.331,1.02],[-.327,.69],[-.312,.53],[-.345,.513],[-.64,.512],[-.90,.515],[-.969,.548],[-1.001,.63],[-1.044,.715],[-1.112,.794],[-1.193,.84],[-1.309,.883],[-1.332,.925],[-1.327,1.0],[-1.293,1.17],[-1.264,1.297]]);
-    for(const z of [-1.058,-.085]){
-      const y=1.147;
-      const cup=squab('painted handle recess',s*(sideX(z,y)+.003),y,z,.021,.065,.169,panelGap);
-      cup.rotation.x=-.028;
-      const surround=squab('flush oval door handle surround',s*(sideX(z,y)+.013),y+.002,z,.027,.054,.16,paint);
-      surround.rotation.x=-.028;
-      squab('recess under pull',s*(sideX(z,y)+.025),y+.001,z-.002,.012,.024,.110,darkTrim);
-      squab('painted exterior door pull',s*(sideX(z,y)+.031),y+.012,z,.022,.018,.138,paint);
-      if(z>-.5) squab('door lock barrel',s*(sideX(z,y)+.032),y+.001,z-.061,.008,.015,.015,polished);
+    doorPath('front door leading and sill seam',[[.703,1.27],[.746,1.211],[.777,1.130],[.793,1.009],[.794,.828],[.785,.682],[.765,.603],[.742,.558],[.714,.535],[.65,.529],[.24,.527],[-.287,.526],[-.322,.534]]);
+    doorPath('B-post door meeting edges',[[-.340,.530],[-.326,.600],[-.318,.802],[-.328,1.030],[-.339,1.269]]);
+    doorPath('rear door shaped corner and sill seam',[[-1.264,1.262],[-1.280,1.211],[-1.299,1.116],[-1.316,1.000],[-1.315,.944],[-1.307,.922],[-1.228,.892],[-1.149,.860],[-1.085,.815],[-1.031,.750],[-.975,.660],[-.918,.554],[-.897,.531],[-.829,.526],[-.52,.525],[-.34,.530]]);
+    for(const [z,y] of [[-1.098,1.104],[-.134,1.113]]){
+      const x=sideX(z,y);
+      // Oval lipped surrounds, scooped finger recess, tapered pull and thumb cap.
+      squab('elliptical door handle surround',s*(x+.001),y,z,.017,.068,.244,polished,.73);
+      squab('metallic handle pocket shell',s*(x+.008),y,z,.017,.058,.229,paint,.73);
+      squab('deep finger pocket',s*(x+.015),y+.002,z-.003,.012,.030,.149,rubber,.65);
+      const handle=tube('raised bridge door pull',[
+        V(s*(x+.017),y+.008,z-.078),V(s*(x+.030),y+.015,z-.054),
+        V(s*(x+.036),y+.018,z),V(s*(x+.030),y+.015,z+.057),V(s*(x+.017),y+.006,z+.078)
+      ],.010,paint,22,12);
+      handle.castShadow=true;
+      if(z>-.5)squab('key barrel',s*(x+.019),y,z-.094,.007,.018,.020,polished,.85);
     }
-    const markerY=1.13, markerZ=1.05;
-    squab('front quarter repeater seal',s*(sideX(markerZ,markerY)+.003),markerY,markerZ,.019,.045,.076,darkTrim);
-    squab('amber side marker lens',s*(sideX(markerZ,markerY)+.013),markerY,markerZ,.014,.036,.064,std(0xdeab57,.27,.23));
-    // The fuel flap is on the left quarter, opposite the steering position.
-    if(s===1) doorPath('fuel filler lid',[[-1.70,1.174],[-1.858,1.171],[-1.867,1.14],[-1.862,1.048],[-1.844,1.035],[-1.69,1.038],[-1.681,1.056],[-1.682,1.155],[-1.70,1.174]]);
+    const markerY=1.112, markerZ=.855,x=sideX(markerZ,markerY);
+    squab('side repeater perimeter',s*(x+.001),markerY,markerZ,.016,.040,.073,rubber,.56);
+    squab('amber quarter repeater',s*(x+.011),markerY,markerZ,.015,.034,.064,std(0xe4c38b,.22,.11),.57);
+    if(s===1)doorPath('recessed fuel filler joint',[[-1.68,1.179],[-1.841,1.176],[-1.863,1.160],[-1.864,1.069],[-1.85,1.048],[-1.684,1.050],[-1.67,1.063],[-1.668,1.161],[-1.68,1.179]],.0043);
   }
 
-  // A gently bowed front face, with the bonnet nose rolled into the fascia.
-  const endZ=(front,u)=>front ? 2.31-.065*(Math.abs(u)**3) : -2.32+.06*(Math.abs(u)**3);
-  function hood(z,u) {
-    const a=Math.abs(u),outer=sideX(z,top(z));
-    const edgeCrown=(1-a*a)*(.023+.010*smooth(z,1.95,2.27));
-    const ridge=.017*Math.exp(-Math.pow((a-.72)/.102,2))*(.30+.70*Math.sin(Math.PI*clamp((z-.73)/1.60,0,1))**.7);
-    return V(u*outer,top(z)+edgeCrown+ridge,z);
+  // The upper front edge is bowed almost 19 cm from the badge to the corner
+  // indicator. The outer fender shoulders turn continuously into the bonnet.
+  const frontBow=curve([[0,2.338],[.31,2.330],[.54,2.308],[.69,2.283],[.826,2.240],[.926,2.199],[1,2.15]]);
+  const endZ=(front,u)=>front ? frontBow(Math.abs(u)) : -2.44+.074*(Math.abs(u)**3.5);
+  const hoodSpine=curve([[.68,1.303],[.93,1.303],[1.10,1.302],[1.38,1.293],[1.65,1.276],[1.9,1.252],[2.08,1.231],[2.22,1.213],[2.338,1.194]]);
+  const windshieldBase=u=>.936-.233*Math.abs(u)**2.35;
+  function hood(z,u){
+    const a=Math.min(Math.abs(u),1),outer=sideX(Math.min(z,z1),top(Math.min(z,z1)));
+    const edgeY=top(Math.min(z,z1))-.006*Math.max(0,(z-z1)/.188);
+    const crown=Math.sqrt(Math.max(0,1-a**3.4));
+    const crest=.013*gaussian(a,.765,.103)*Math.sin(Math.PI*clamp((z-.60)/1.86,0,1))**.52;
+    const channel=-.0044*gaussian(a,.665,.030)*(1-smooth(z,2.22,2.34));
+    return V(u*outer,mix(edgeY,hoodSpine(z),crown)+crest+channel,z);
   }
-  const windshieldBase=u=>1.02-.208*Math.abs(u)**2.2;
-  grid('crowned bonnet and front fender shoulders',62,62,(x,t)=>{
-    const u=2*x-1,z=mix(windshieldBase(u)-.068,endZ(true,u),t);
-    return hood(z,u);
+  const bonnet=grid('compound-curved bonnet, fender brows and nose',96,63,(x,t)=>{
+    // More samples across the extremely rounded outer edge.
+    const a=Math.sin((x-.5)*Math.PI),z=mix(windshieldBase(a)-.032,endZ(true,a),t);
+    return hood(z,a);
   },paint,V(0,1,0));
+  applyBonnetSurface(THREE,bonnet);
   for(const s of [-1,1]){
-    edge('bonnet perimeter shut line',t=>{
-      const a=.733+.09*t,z=mix(.905,2.275,t);
-      const p=hood(z,a*s);p.y+=.002;return p;
-    },.0033,panelGap,50);
+    const crease=u=>{
+      const a=mix(.746,.639,smooth(u,0,1))*s;
+      const z=mix(windshieldBase(a)+.065,endZ(true,a)-.004,u);
+      return hood(z,a);
+    };
+    edge('bonnet closing gap',t=>{const p=crease(t);p.y+=.0014;return p;},.0028,panelGap,54);
   }
-  grid('front fascia substrate',48,8,(u,v)=>{
-    const a=2*u-1,z=endZ(true,a);
-    const p=hood(z,a);
-    return V(p.x,mix(.76,p.y,v),z-.006*(1-v));
-  },paint,V(0,0,1));
-  grid('tailgate inner panel',54,20,(u,v)=>{
-    const a=2*u-1,y=mix(.64,1.29,v);
-    const z=endZ(false,a)+.022*(1-smooth(y,.655,.75))+.012*Math.exp(-Math.pow((y-.827)/.028,2));
+  // Black perforated scuttle and the sealed rear lip of the hood.
+  const cowl=(a,t)=>{const z=windshieldBase(a)+mix(-.023,.075,t);const p=hood(z,a);p.y+=.003;return p;};
+  grid('moulded wiper scuttle',52,6,(u,v)=>cowl((u*2-1)*.926,v),darkTrim,V(0,1,0));
+  for(let i=-25;i<=25;i++){
+    const a=i*.029;
+    edge('scuttle intake slot',u=>{const p=cowl(a+u*.008,mix(.16,.79,u));p.y+=.0015;return p;},.0016,rubber,4);
+  }
+  grid('rolled bonnet front hem',58,5,(u,v)=>{
+    const a=2*u-1,p=hood(endZ(true,a),a),k=Math.sin(v*Math.PI/2);
+    return V(p.x,p.y-.016*(1-Math.cos(v*Math.PI/2)),p.z+.0058*k-.005*v*v);
+  },paint,V(0,.35,1));
+  grid('curved radiator support behind grille and lights',48,12,(u,v)=>{
+    const a=2*u-1,p=hood(endZ(true,a),a);
+    return V(p.x*(.991+.009*v),mix(.761,p.y-.009,v),p.z-.060-.030*Math.abs(a)**3-.014*(1-v));
+  },concealed,V(0,0,1));
+  grid('rolled tailgate inner panel',64,23,(u,v)=>{
+    const a=2*u-1,y=mix(.64,1.275,v);
+    const z=endZ(false,a)+.022*(1-smooth(y,.655,.75))+.012*gaussian(y,.827,.028);
     return V(a*sideX(z0,Math.min(y,top(z0))),y,z);
   },paint,V(0,0,-1));
 
-  // Side glass apertures are cut out of the actual cabin framework. Narrow
-  // stamped pillars connect the roof, quarter panel, scuttle and door frames.
+  // Calibrated side-glass silhouette, including the tapering tumblehome and
+  // the slight barrel to each piece of glass in both directions.
   const cabWidth=(y,z)=>{
-    const t=clamp((y-1.277)/.559,0,1);
-    const base=sideX(clamp(z,z0,.86),top(clamp(z,z0,.86)));
-    return mix(base,.78,t*.90+t*t*.10)+.014*Math.sin(Math.PI*t);
+    const t=clamp((y-top(clamp(z,z0,.703)))/(.821+1.0-top(clamp(z,z0,.703))),0,1);
+    const base=sideX(clamp(z,z0,.703),top(clamp(z,z0,.703)));
+    const eave=.782-.012*smooth(-z,1.79,2.32)-.005*smooth(z,.02,.68);
+    return mix(base,eave,.70*t+.30*t*t)+.010*Math.sin(Math.PI*t);
   };
   const cabP=(s,z,y,d=0)=>V(s*(cabWidth(y,z)+d),y,z);
-  const cabOutline=[[-2.26,1.252],[-2.244,1.43],[-2.185,1.662],[-2.104,1.77],[-2.03,1.832],[-1.92,1.845],[-.07,1.845],[.085,1.81],[.246,1.743],[.474,1.608],[.812,1.296],[.831,1.277],[.49,1.282],[-.75,1.280],[-1.76,1.265]];
+  const outerFront=curve([[1.266,.703],[1.348,.622],[1.476,.498],[1.610,.341],[1.709,.208],[1.773,.101],[1.806,.019],[1.821,-.054]]);
+  const outerRear=curve([[1.242,-2.366],[1.390,-2.332],[1.522,-2.279],[1.650,-2.210],[1.74,-2.153],[1.798,-2.083],[1.819,-2.026]]);
+  function outlineColumns(fn,lo,hi,n){
+    return Array.from({length:n+1},(_,i)=>{const y=mix(lo,hi,i/n);return [fn(y),y];});
+  }
+  const cabOutline=[
+    ...outlineColumns(outerRear,1.242,1.819,35),[-1.875,1.823],[-1.64,1.824],[-.58,1.827],[-.26,1.828],[-.071,1.823],
+    ...outlineColumns(outerFront,1.821,1.266,42),[.54,1.271],[.17,1.270],[-.46,1.262],[-1.27,1.253],[-1.84,1.246]
+  ];
   const openings=[
-    [[-2.133,1.328],[-2.112,1.484],[-2.057,1.643],[-1.989,1.744],[-1.90,1.785],[-1.208,1.792],[-1.264,1.32],[-2.025,1.308]],
-    [[-1.232,1.32],[-1.178,1.794],[-.423,1.80],[-.404,1.32]],
-    [[-.326,1.32],[-.347,1.800],[-.105,1.800],[.03,1.778],[.166,1.719],[.359,1.595],[.656,1.363],[.67,1.325]]
+    [[-2.102,1.347],[-2.098,1.403],[-2.081,1.498],[-2.052,1.587],[-2.016,1.675],[-1.971,1.722],[-1.923,1.746],[-1.851,1.758],[-1.245,1.777],[-1.269,1.263],[-2.016,1.252]],
+    [[-1.232,1.265],[-1.195,1.771],[-.429,1.778],[-.412,1.270]],
+    [[-.267,1.275],[-.377,1.777],[-.102,1.778],[-.022,1.761],[.095,1.718],[.202,1.655],[.333,1.551],[.475,1.408],[.537,1.335],[.545,1.28]]
   ];
   function rounded(points,radius) {
     const path=new THREE.Shape();
@@ -241,74 +287,105 @@ export function buildBody(THREE) {
     }
     path.closePath();return path;
   }
-  function sidePoly(sign,name,shape,mat,offset,depthVariation=0) {
-    const geo=new THREE.ShapeGeometry(shape,8),attr=geo.attributes.position;
-    for(let i=0;i<attr.count;i++){
-      const z=attr.getX(i),y=attr.getY(i);
-      attr.setXYZ(i,sign*(cabWidth(y,z)+offset+depthVariation*Math.sin(Math.PI*clamp((y-1.32)/.48,0,1))),y,z);
+  function sidePoly(sign,name,shape,mat,offset){
+    // Tessellate through each aperture as well as along the outline: a single
+    // triangulated quad gives a flat diagonal highlight across an SUV window.
+    const initial=new THREE.ShapeGeometry(shape,5),pt=initial.attributes.position,index=initial.index.array;
+    const pos=[],normal=[],uv=[],lookup=new Map(),tri=[];
+    const maxLength=.095, point=(i)=>[pt.getX(i),pt.getY(i)];
+    const entry=(a)=>{
+      const [z,y]=a,key=Math.round(z*1e6)+','+Math.round(y*1e6);
+      if(lookup.has(key))return lookup.get(key);
+      const x=cabWidth(y,z),dz=(cabWidth(y,z+.00015)-cabWidth(y,z-.00015))/.00030,dy=(cabWidth(y+.00015,z)-cabWidth(y-.00015,z))/.00030;
+      const n=V(sign,-dy,-dz).normalize(),i=pos.length/3;
+      pos.push(sign*(x+offset),y,z);normal.push(...n.toArray());uv.push(z,y);lookup.set(key,i);
+      return i;
+    };
+    const squared=(a,b)=>(a[0]-b[0])**2+(a[1]-b[1])**2;
+    const half=(a,b)=>[(a[0]+b[0])*.5,(a[1]+b[1])*.5];
+    function split(a,b,c){
+      const ab=squared(a,b),bc=squared(b,c),ca=squared(c,a);
+      if(Math.max(ab,bc,ca)<=maxLength*maxLength){
+        const t=[entry(a),entry(b),entry(c)];
+        if(sign===1) t.reverse();
+        tri.push(...t);return;
+      }
+      if(ab>=bc&&ab>=ca){const h=half(a,b);split(a,h,c);split(h,b,c);}
+      else if(bc>=ca){const h=half(b,c);split(a,b,h);split(a,h,c);}
+      else {const h=half(c,a);split(a,b,h);split(h,b,c);}
     }
-    if(sign===1){
-      const idx=geo.index.array;
-      for(let i=0;i<idx.length;i+=3) [idx[i+1],idx[i+2]]=[idx[i+2],idx[i+1]];
-    }
-    geo.computeVertexNormals();return part(name,geo,mat);
+    for(let i=0;i<index.length;i+=3)split(point(index[i]),point(index[i+1]),point(index[i+2]));
+    initial.dispose();
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));geo.setAttribute('normal',new THREE.Float32BufferAttribute(normal,3));
+    geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));geo.setIndex(tri);
+    return part(name,geo,mat);
   }
   function traceShape(sign,name,shape,radius,mat,offset){
-    const pts=shape.getSpacedPoints(100).map(p=>cabP(sign,p.x,p.y,offset));
-    return tube(name,pts,radius,mat,100);
+    const pts=shape.getSpacedPoints(120).map(p=>cabP(sign,p.x,p.y,offset));
+    return tube(name,pts,radius,mat,120);
   }
   const glassNames=['rear quarter','rear door','front door'];
   for(const s of [-1,1]){
-    const outline=rounded(cabOutline,.022);
-    const shapes=openings.map((a,i)=>rounded(a,i===0?.040:.018));
+    const outline=rounded(cabOutline,.012);
+    const shapes=openings.map((a,i)=>rounded(a,i===0?.031:.014));
     for(const shape of shapes) outline.holes.push(shape);
-    sidePoly(s,'painted side pillars and window frames',outline,paint,0);
+    sidePoly(s,'painted pillars and window apertures',outline,paint,0);
     for(let i=0;i<shapes.length;i++){
-      sidePoly(s,glassNames[i]+' curved tinted glass',shapes[i],i===2?driverGlass:privacyGlass,-.003);
-      traceShape(s,glassNames[i]+' black weatherstrip',shapes[i],i===0?.0085:.0078,rubber,.002);
+      const m=sidePoly(s,glassNames[i]+' compound-curved glazing',shapes[i],i===2?driverGlass:privacyGlass,-.0057);
+      projection(m,['quarter-glass','rear-glass','front-glass'][i]);
+      traceShape(s,glassNames[i]+' compressed rubber seal',shapes[i],i===0?.0066:.0058,rubber,.0013);
     }
-    sidePoly(s,'satin black B pillar',rounded([[-.405,1.316],[-.425,1.804],[-.341,1.805],[-.317,1.315]],.004),darkTrim,.002);
-    sidePoly(s,'quarter glass division',rounded([[-1.268,1.32],[-1.211,1.796],[-1.176,1.796],[-1.231,1.318]],.001),darkTrim,.002);
-    edge('vent window division',u=>cabP(s,mix(-.964,-.935,u),mix(1.323,1.792,u),.002),.0065,rubber,12);
-    edge('upper door belt moulding',u=>{
-      const z=mix(-1.26,.732,u),y=mix(1.303,1.307,u);
-      return cabP(s,z,y,.004);
-    },.006,rubber,50);
-    // Dark smoke acrylic deflectors following the top two door frames.
-    sidePoly(s,'rear door smoked rain visor',rounded([[-1.174,1.786],[-.435,1.793],[-.424,1.742],[-.48,1.725],[-1.161,1.730],[-1.183,1.746]],.013),deflectorGlass,.020);
-    sidePoly(s,'front door smoked rain visor',rounded([[-.326,1.792],[-.112,1.792],[.028,1.772],[.168,1.707],[.34,1.593],[.50,1.467],[.486,1.456],[.286,1.596],[.128,1.679],[-.018,1.722],[-.312,1.738]],.011),deflectorGlass,.020);
-    // Distinct stepped black D-pillar pressure relief grille.
-    sidePoly(s,'rear quarter vent housing',rounded([[-2.214,1.31],[-2.201,1.385],[-2.157,1.407],[-2.104,1.395],[-2.078,1.32]],.012),rubber,.004);
-    for(let k=0;k<4;k++){
-      const y=1.328+k*.015;
-      edge('quarter vent louvre',u=>cabP(s,mix(-2.206+k*.002,-2.09-k*.003,u),y,.008),.003,darkTrim,6);
+    sidePoly(s,'satin black B-post cover',rounded([[-.414,1.265],[-.435,1.782],[-.378,1.783],[-.268,1.273]],.0022),darkTrim,.0008);
+    sidePoly(s,'glass division on C-post',rounded([[-1.270,1.255],[-1.246,1.78],[-1.199,1.778],[-1.234,1.262]],.003),darkTrim,.0012);
+    edge('rear quarterlight divider',u=>cabP(s,mix(-.944,-.99,u),mix(1.267,1.769,u),.001),.0065,rubber,18);
+    edge('window lower weather belt',u=>{const z=mix(-1.251,.620,u);return cabP(s,z,top(z)+.001,.0026);},.0048,rubber,49);
+    const rearVisor=rounded([[-1.191,1.773],[-.445,1.783],[-.427,1.768],[-.433,1.690],[-.472,1.676],[-1.159,1.679],[-1.19,1.672],[-1.204,1.683]],.012);
+    const frontVisor=rounded([[-.368,1.782],[-.099,1.778],[.007,1.754],[.144,1.69],[.292,1.582],[.415,1.461],[.397,1.464],[.249,1.578],[.100,1.642],[-.058,1.669],[-.342,1.684],[-.368,1.696]],.010);
+    for(const [shape,label] of [[rearVisor,'rear'],[frontVisor,'front']]){
+      sidePoly(s,label+' smoke acrylic door visor',shape,deflectorGlass,.0195);
+      traceShape(s,label+' visor rolled edge',shape,.0023,darkTrim,.020);
     }
-    traceShape(s,'rear door window frame joint',rounded([[-1.273,1.304],[-1.207,1.816],[-.405,1.823],[-.379,1.303]],.012),.0022,panelGap,.004);
+    const sail=rounded([[.538,1.278],[.526,1.337],[.486,1.4],[.557,1.353],[.668,1.277]],.005);
+    sidePoly(s,'black mirror mounting sail',sail,darkTrim,.0025);
+    // Fluted pressure-relief insert in the rear dogleg.
+    const vent=rounded([[-2.331,1.261],[-2.308,1.322],[-2.287,1.346],[-2.166,1.346],[-2.13,1.283],[-2.122,1.263]],.013);
+    sidePoly(s,'quarter vent recessed well',vent,rubber,.003);
+    traceShape(s,'quarter vent moulded surround',vent,.0044,darkTrim,.005);
+    for(let k=0;k<5;k++){
+      const y=1.272+k*.012;
+      edge('vent louvre',u=>cabP(s,mix(-2.312+k*.004,-2.145-k*.005,u),y,.009),.0029,darkTrim,8);
+    }
+    traceShape(s,'rear door upper seam',rounded([[-1.264,1.261],[-1.215,1.802],[-.402,1.807],[-.344,1.268]],.007),.0019,panelGap,.003);
   }
 
-  const linearProfile=(v,points)=>{
-    if(v<=points[0][0])return points[0][1];
-    for(let i=1;i<points.length;i++){
-      if(v<=points[i][0])return mix(points[i-1][1],points[i][1],(v-points[i-1][0])/(points[i][0]-points[i-1][0]));
-    }
-    return points.at(-1)[1];
-  };
   function frontSurface(a,h,d=0){
-    const y=mix(1.296,1.836,h);
-    const sideZ=linearProfile(y,[[1.296,.812],[1.608,.474],[1.743,.246],[1.81,.085],[1.836,-.024]]);
-    return V(a*cabWidth(y,sideZ),y+(1-a*a)*mix(.019,.022,h)+d*.65,sideZ+(1-Math.abs(a)**2.2)*mix(.208,.12,h)+d);
+    const y=mix(1.266,1.821,h),z=outerFront(y),c=1-Math.abs(a)**2.35;
+    return V(a*cabWidth(y,z),y+c*mix(.036,.028,h)+d*.65,z+c*mix(.233,.144,h)+d);
   }
   function rearSurface(a,h,d=0){
-    const y=mix(1.252,1.836,h);
-    const sideZ=linearProfile(y,[[1.252,-2.26],[1.43,-2.244],[1.662,-2.185],[1.77,-2.104],[1.836,-2.025]]);
-    return V(a*cabWidth(y,sideZ),y+(1-a*a)*mix(.022,.016,h)+d*.24,sideZ-(1-Math.abs(a)**3)*.064-d);
+    const y=mix(1.242,1.819,h),z=outerRear(y),c=1-Math.abs(a)**3.15;
+    return V(a*cabWidth(y,z),y+c*mix(.021,.022,h)+d*.27,z-c*mix(.074,.100,h)-d);
   }
   function glazedEnd(name,surface,glass,front,lower,upper,width){
     const normal=V(0,.24,front?1:-1);
     // Radius the four corners by narrowing the final few centimetres of pane.
     const widthAt=v=>width-.023*Math.pow(Math.abs(v*2-1),14);
     const at=(a,v,off=0)=>surface(a*widthAt(v),mix(lower,upper,v),off);
-    grid(name+' glazing',34,19,(u,v)=>at(u*2-1,v),glass,normal);
+    const paneMesh=grid(name+' glazing',42,28,(u,v)=>at(u*2-1,v),glass,normal);
+    if(front){
+      // Laminated glass cools gently towards the upper edge and the rolled
+      // corners. The specular environment remains free to move with the viewer.
+      const geom=paneMesh.geometry,uv=geom.attributes.uv,colors=new Float32Array(uv.count*3);
+      for(let i=0;i<uv.count;i++){
+        const side=Math.abs(2*uv.getX(i)-1),head=smooth(uv.getY(i),.64,1);
+        colors[i*3]=1-.23*head-.055*side**4;
+        colors[i*3+1]=1-.122*head-.022*side**4;
+        colors[i*3+2]=1-.066*head;
+      }
+      geom.setAttribute('color',new THREE.BufferAttribute(colors,3));
+      glass.vertexColors=true;
+    }
     grid(name+' header',34,5,(u,v)=>surface(2*u-1,mix(upper,1,v)),paint,normal);
     grid(name+' lower frame',34,5,(u,v)=>surface(2*u-1,mix(0,lower,v)),paint,normal);
     for(const s of [-1,1]){
@@ -318,17 +395,22 @@ export function buildBody(THREE) {
     for(const v of [0,1])edge(name+' perimeter weatherstrip',u=>at(2*u-1,v,.001),.0105,rubber,40);
     return at;
   }
-  const wind=glazedEnd('windscreen',frontSurface,frontGlass,true,.035,.932,.946);
-  const rear=glazedEnd('heated rear screen',rearSurface,backGlass,false,.084,.884,.864);
+  const wind=glazedEnd('windscreen',frontSurface,frontGlass,true,.024,.947,.948);
+  const rear=glazedEnd('heated rear screen',rearSurface,backGlass,false,.076,.869,.849);
 
   // Roof crown, stamped channels and narrow flush roof-gutter strips.
   function roof(a,v,offset=0){
     const front=frontSurface(a,1),rear=rearSurface(a,1);
     const z=mix(rear.z,front.z,v);
     const crown=1-Math.abs(a)**2.7;
-    const bow=.010*Math.sin(Math.PI*v)**.8;
-    const groove=.0045*Math.exp(-(((Math.abs(a)-.66)/.031)**2))*Math.sin(Math.PI*v)**1.35;
-    return V(a*mix(Math.abs(rearSurface(1,1).x),Math.abs(frontSurface(1,1).x),v),mix(rear.y,front.y,v)+.022*crown+bow*crown-groove+offset,z);
+    const span=Math.sin(Math.PI*v)**.72;
+    const bow=span*(.006+.014*crown);
+    const groove=.0045*gaussian(Math.abs(a),.666,.032)*span;
+    // Shallow longitudinal pressings stiffen the rear roof panel. Their ends
+    // fade smoothly before the curved front/rear headers.
+    const ribs=(.0045*gaussian(a,0,.085)+.0042*gaussian(Math.abs(a),.32,.075)+
+      .0036*gaussian(Math.abs(a),.587,.061))*smooth(v,.095,.15)*(1-smooth(v,.71,.84));
+    return V(a*mix(Math.abs(rearSurface(1,1).x),Math.abs(frontSurface(1,1).x),v),mix(rear.y,front.y,v)+bow-groove+ribs+offset,z);
   }
   grid('gently crowned roof pressing',70,48,(u,v)=>roof(2*u-1,v),paint,V(0,1,0));
   for(const s of [-1,1]){
@@ -367,46 +449,6 @@ export function buildBody(THREE) {
   const sticker=std(permitMap?0xffffff:0x8ca79c,.69,0,{map:permitMap,transparent:true,alphaTest:.18,side:THREE.DoubleSide});
   grid('inspection permits',5,22,(u,v)=>wind(mix(.781,.931,u),mix(.083,.846,v),.0027),sticker,V(0,.3,1));
 
-  // A restrained but dimensional right-hand-drive interior, visible through
-  // the windscreen and front door windows.
-  const interiorFloor=box('cab floor and carpet',0,.795,-.61,1.53,.043,3.16,seatInsert);
-  interiorFloor.receiveShadow=true;
-  squab('cargo interior trim',0,1.010,-1.91,1.42,.33,.46,charcoal);
-  squab('rear luggage cover',0,1.245,-1.69,1.51,.044,.89,seatMaterial);
-  for(const s of [-1,1]){
-    for(const z of [-1.13,-.065]){
-      const row=z<-.5?'second row':'front';
-      squab(row+' seat cushion',s*.399,.962,z,.49,.164,.52,seatMaterial);
-      const back=squab(row+' shaped seatback',s*.399,1.211,z-.19,.48,.52,.135,seatMaterial);
-      back.rotation.x=-.10;
-      const insert=squab(row+' upholstered seat insert',s*.399,1.207,z-.119,.329,.40,.021,seatInsert);
-      insert.rotation.x=-.10;
-      for(const q of [-1,1])box('head restraint post',s*.399+q*.058,1.495,z-.217,.012,.086,.012,polished);
-      const rest=squab(row+' head restraint',s*.399,1.555,z-.227,.268,.178,.139,seatMaterial);
-      rest.rotation.x=-.12;
-    }
-    squab('door inner trim',s*.79,1.102,-.266,.06,.27,1.94,charcoal);
-    tube('A-pillar grab handle',[V(s*.745,1.685,.235),V(s*.714,1.666,.253),V(s*.718,1.599,.35),V(s*.772,1.577,.39)],.0115,lining,15);
-  }
-  squab('dashboard top pad',0,1.235,.638,1.6,.162,.448,charcoal);
-  squab('instrument binnacle',-.395,1.31,.573,.466,.139,.234,darkTrim);
-  const steering=new THREE.Group();steering.name='right-hand-drive steering wheel';
-  steering.position.set(-.397,1.244,.377);steering.rotation.x=-.45;group.add(steering);
-  const wheelRim=new THREE.Mesh(new THREE.TorusGeometry(.167,.015,10,58),charcoal);
-  steering.add(wheelRim);
-  const wheelHub=new THREE.Mesh(new THREE.BoxGeometry(.118,.082,.048),darkTrim);
-  steering.add(wheelHub);
-  for(const ang of [-.04,Math.PI+.04,-.96,-Math.PI+.96]){
-    const spoke=new THREE.Mesh(new THREE.CylinderGeometry(.012,.015,.132,8),charcoal);
-    spoke.rotation.z=ang-Math.PI/2;spoke.position.set(Math.cos(ang)*.098,Math.sin(ang)*.098,0);
-    steering.add(spoke);
-  }
-  squab('center console',0,.998,.057,.213,.226,.516,charcoal);
-  tube('gear selector',[V(-.027,1.079,.124),V(-.031,1.171,.142)],.013,darkTrim,5);
-  squab('selector knob',-.031,1.169,.145,.05,.057,.052,charcoal);
-  squab('rear view mirror',0,1.711,.159,.217,.067,.034,darkTrim);
-  tube('interior mirror stem',[V(0,1.732,.153),V(0,1.789,.168)],.009,darkTrim,6);
-
   // The upper liftgate and lower drop gate are split across the rear face.
   const gatePoint=(a,y,d=.003)=>V(a*sideX(z0,y),y,endZ(false,a)+.012*Math.exp(-Math.pow((y-.827)/.028,2))-d);
   for(const s of [-1,1]){
@@ -414,5 +456,6 @@ export function buildBody(THREE) {
   }
   edge('split tailgate seam',u=>gatePoint(mix(-.772,.772,u),.831,.004),.004,panelGap,46);
   edge('rear gate lower moulding',u=>gatePoint(mix(-.766,.766,u),.771,.004),.006,paint,46);
+  group.add(buildWheelTubs(THREE,low));
   return group;
 }
