@@ -97,7 +97,8 @@ async function start() {
   let dirty = true, intersecting = true, tween = null, previous = 0;
   renderer.onReady = () => { dirty=true; };
   const pose = {
-    overview: [-.80,.197,1], front: [0,.012,1], side: [-1,.12,.0001],
+    // Eye-level three-quarter view fitted to the owner's paved-drive photograph.
+    overview: [-.847,.101,1], front: [0,.012,1], side: [-1,.12,.0001],
     rear:[0,.018,-1], roof:[-.001,1,.00001], underbody:[-.055,-1,.003]
   };
   const closeups = {
@@ -135,6 +136,8 @@ async function start() {
     for (const z of [-1.68,-.56]) pts.push(V(sign*.65,2.05,z));
     for (const z of [-1.43,1.42]) pts.push(V(sign*.94,.018,z),V(sign*.94,.405,z-.405),V(sign*.94,.405,z+.405));
   }
+  // The centre of the custom steel bumper projects beyond its swept wings.
+  for (const sign of [-1,1]) pts.push(V(sign*.32,.86,2.70),V(sign*.32,.62,2.65));
   pts.push(V(-.85,1.03,-2.78),V(-.06,1.03,-2.78),V(-.455,1.42,-2.78),V(-.455,.63,-2.78));
   function frame(direction, target) {
     const right = new THREE.Vector3().crossVectors(camera.up,direction).normalize();

@@ -4,6 +4,7 @@
 import { finishes, pieces, packed, drivingTexture } from './model/sim-driving-mesh.js';
 import * as chassisMesh from './model/sim-driving-chassis.js';
 import { roadHeight } from './sim-physics.js';
+import { makeDrivingReflection } from './software-shading.js';
 
 const TAU=2*Math.PI, WHEEL=.405, FRONT=1.42, REAR=-1.43;
 const clamp=(x,l,h)=>Math.max(l,Math.min(h,x));
@@ -237,6 +238,7 @@ export function createSimSoftware(canvas,THREE){
   const vehicle=readMesh(packed,pieces),mechanism=new Geometry();
   wheels(mechanism);vehicle.push(...readMesh(chassisMesh.packed,chassisMesh.pieces,chassisOffset),...mechanism.mesh());
   const projection=new THREE.Matrix4(),scratch=new Map();
+  const reflection=makeDrivingReflection();
   let W=0,H=0,requestedW=0,requestedH=0,image,rgba,depth,backdrop;
   let dead=false,last=null,queued=false,sceneKey='',live=[],prevCost=0,scaleHint=1,refine=0;
   // A repeatable two-scale aggregate texture follows the physical road. Noise
@@ -249,9 +251,11 @@ export function createSimSoftware(canvas,THREE){
     const redraw=()=>{queued=false;if(!dead&&last)draw(...last);};
     if(typeof requestAnimationFrame==='function')requestAnimationFrame(redraw);else setTimeout(redraw,0);
   });
-  function dimensions(){
+  function dimensions(settled){
     const w=Math.max(1,requestedW||canvas.clientWidth||canvas.width||600),h=Math.max(1,requestedH||canvas.clientHeight||canvas.height||400);
-    const s=Math.min(scaleHint,1050/w,Math.sqrt(460000/(w*h)));
+    const dpr=globalThis.devicePixelRatio||1;
+    const s=settled ? Math.min(clamp(dpr,1.6,2),1700/w,Math.sqrt(1100000/(w*h)))
+      : Math.min(scaleHint,1050/w,Math.sqrt(460000/(w*h)));
     const x=Math.max(1,Math.round(w*s)),y=Math.max(1,Math.round(h*s));
     if(x===W&&y===H)return;
     W=x;H=y;canvas.width=W;canvas.height=H;image=ctx.createImageData(W,H);rgba=new Uint32Array(image.data.buffer);depth=new Float32Array(W*H);backdrop=new Uint32Array(W*H);
@@ -266,10 +270,10 @@ export function createSimSoftware(canvas,THREE){
     if(!a||a.length<count*7){a=new Float32Array(count*7);scratch.set(key,a);}
     return a;
   }
-  function draw(camera,sample,run,cutaway=false){
+  function draw(camera,sample,run,cutaway=false,settled=false){
     if(dead||!sample||!run)return;
     const t0=performance.now(),moving=last && last[1].t!==sample.t;last=[camera,sample,run,cutaway];
-    dimensions();rgba.set(backdrop);depth.fill(0);
+    dimensions(settled);rgba.set(backdrop);depth.fill(0);
     camera.updateMatrixWorld();projection.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
     const M=projection.elements,eye=camera.position, near=camera.near;
     const pose=frameRise(sample,run),spin=(sample.x-run.startX)/WHEEL,cs=Math.cos(spin),sn=Math.sin(spin);
@@ -279,7 +283,7 @@ export function createSimSoftware(canvas,THREE){
       const g=new Geometry();
       articulations(g,pose);if(groundOn)road(g,sample,run);live=g.mesh();sceneKey=key;
     }
-    const solid=[],blended=[],track=[];
+    const solid=[],blended=[],track=[],transparentTriangles=[];
     for(const mesh of [...vehicle,...live]){
       if(cutaway && (mesh.rig==='shell'||mesh.rig==='floor'||mesh.rig==='fw-1'||mesh.rig==='rw-1'))continue;
       if(mesh.rig==='ground')track.push(mesh);
@@ -291,7 +295,11 @@ export function createSimSoftware(canvas,THREE){
     for(const mesh of [...solid,...track,...blended]){
       const m=materials[mesh.material],p=mesh.positions,n=mesh.normals, idx=mesh.indices,uv=mesh.uv,rig=mesh.rig;
       const buf=scratchFor(mesh), levels=maps.get(m[3]), color=(!levels&&m[3])?missingColor(m[3]):m[0];
-      const isGlass=m[5], opacity=isGlass?Math.max(.33,m[4]):1,base=m[1],rough=m[2];
+      const isGlass=m[5], opacity=isGlass?m[4]:1,base=m[1],rough=m[2];
+      const transparentSurface=isGlass && opacity<.99;
+      const glossy=rough<.73 && (base>.18 || transparentSurface);
+      const mip=clamp(Math.round(rough*4),0,4);
+      const gloss=(1-rough)*(1-rough);
       let c=1,s=0,dy=0,dz=0,wheelMode=false,wheelCenter=0,roadUnder=0;
       if(rig==='shell'||rig==='frame'||rig==='floor'){c=pose.c;s=pose.n;dy=pose.dy;dz=pose.dz;}
       else if(rig==='fa'||rig==='ra'){dy=rig==='fa'?pose.wheelF:pose.wheelR;}
@@ -318,13 +326,18 @@ export function createSimSoftware(canvas,THREE){
         let light=.66+.36*sun+.11*(ny*.5+.5)+.16*fill;
         if(under)light+=.13+.20*Math.max(0,-ny);
         let glint=0;
-        if(base>.18||isGlass){
-          let vx=eye.x-x,vy=eye.y-y,vz=eye.z-z;const d=1/Math.sqrt(vx*vx+vy*vy+vz*vz+.000001);
-          vx*=d;vy*=d;vz*=d;
-          const dot=clamp(nx*vx+ny*vy+nz*vz,0,1),refl=2*dot*ny-vy;
-          const sky=clamp(1-Math.abs(refl-.47)/(.32+rough*.21),0,1);
-          if(base>.48&&!isGlass)light*=1+base*(1-rough)*(-.48+.22*Math.max(0,ny)+.31*sky);
-          glint=(3+24*sky*sky)*(base+(isGlass?.55:0))*(1-.58*rough);
+        if(glossy){
+          let vx=eye.x-x,vy=eye.y-y,vz=eye.z-z;
+          const invLength=1/Math.sqrt(vx*vx+vy*vy+vz*vz+.000001);
+          vx*=invLength;vy*=invLength;vz*=invLength;
+          // Normals are quantized in the reduced mesh and back faces are drawn
+          // on thin glass. Orient the reflection on either side of that sheet.
+          const signed=clamp(nx*vx+ny*vy+nz*vz,-1,1);
+          const radiance=reflection(2*signed*nx-vx,2*signed*ny-vy,2*signed*nz-vz,mip);
+          const sky=Math.min(1.8,radiance), grazing=(1-Math.abs(signed))**5;
+          light*=1+base*(1-rough)*(-.51+.46*sky);
+          const lacquer=transparentSurface?.72:base*(.49+.60*gloss);
+          glint=(12+39*grazing)*lacquer*sky;
         }
         buf[o+3]=light;buf[o+4]=glint;buf[o+5]=uv[i*2];buf[o+6]=uv[i*2+1];
       }
@@ -377,7 +390,7 @@ export function createSimSoftware(canvas,THREE){
               r*=tex.data[at]/255;gg*=tex.data[at+1]/255;b*=tex.data[at+2]/255;alpha*=tex.data[at+3]/255;
               if(alpha<.13)continue;
             }
-            r=r*f+g;gg=gg*f+g;b=b*f+g;
+            r=r*f+.95*g;gg=gg*f+g;b=b*f+1.06*g;
             if(roadFill){
               const dist=1/q,wx=u*dist,wz=v*dist;
               if(roadGrain){
@@ -429,22 +442,32 @@ export function createSimSoftware(canvas,THREE){
           }
         }for(let j=1;j+1<out.length;j++)raster(out[0],out[j],out[j+1]);
       }
-      for(let i=0;i<idx.length;i+=3){
-        const a=idx[i]*7,b=idx[i+1]*7,c=idx[i+2]*7;
+      function triangle(a,b,c){
         if(buf[a+2]>=near&&buf[b+2]>=near&&buf[c+2]>=near)raster(a,b,c);
         else if(buf[a+2]>=near||buf[b+2]>=near||buf[c+2]>=near)clipped(a,b,c);
       }
+      for(let i=0;i<idx.length;i+=3){
+        const a=idx[i]*7,b=idx[i+1]*7,c=idx[i+2]*7;
+        if(isGlass){
+          // Near and far side windows share materials and can occupy the same
+          // batch. Sort their triangles after projected vertices are ready.
+          transparentTriangles.push({a,b,c,depth:buf[a+2]+buf[b+2]+buf[c+2],triangle});
+        }else triangle(a,b,c);
+      }
     }
+    transparentTriangles.sort((a,b)=>b.depth-a.depth);
+    for(const t of transparentTriangles)t.triangle(t.a,t.b,t.c);
     ctx.putImageData(image,0,0);
-    const elapsed=performance.now()-t0;prevCost=prevCost?prevCost*.8+elapsed*.2:elapsed;
-    // Preserve an interactive driving view on slower CPUs. The mesh topology,
-    // suspension kinematics and track geometry stay identical at all resolutions.
-    if(prevCost>(moving?44:70)&&scaleHint>.59){scaleHint=Math.max(.59,scaleHint-.07);prevCost=35;}
-    else if(prevCost<16&&scaleHint<1){scaleHint=Math.min(1,scaleHint+.025);prevCost=27;}
     clearTimeout(refine);
-    if(moving&&scaleHint<.98)refine=setTimeout(()=>{
-      if(!dead&&last){scaleHint=1;draw(...last);}
-    },220);
+    if(!settled){
+      const elapsed=performance.now()-t0;
+      prevCost=prevCost?prevCost*.8+elapsed*.2:elapsed;
+      if(prevCost>(moving?44:70)&&scaleHint>.59){scaleHint=Math.max(.59,scaleHint-.07);prevCost=35;}
+      else if(prevCost<16&&scaleHint<1){scaleHint=Math.min(1,scaleHint+.025);prevCost=27;}
+      // Orbit or playback uses the adaptive resolution above. After *any*
+      // interaction settles, supersample the held pose for clean trim edges.
+      refine=setTimeout(()=>{if(!dead&&last)draw(...last,true);},180);
+    }
   }
   return {draw,resize(w,h){requestedW=w;requestedH=h;},dispose(){dead=true;clearTimeout(refine);last=null;scratch.clear();maps.clear();}};
 }

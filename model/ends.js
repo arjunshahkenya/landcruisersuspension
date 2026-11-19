@@ -120,17 +120,25 @@ export function buildEnds(T) {
   // Cross-car recession of the hood edge, measured from center to the rolled
   // upper corner of the fender. All of the optical parts share this datum.
   const noseStations=[[0,2.338],[.25,2.333],[.49,2.308],[.64,2.279],[.75,2.240],[.835,2.200],[.903,2.150]];
+  const noseSlope=noseStations.map((p,i,all)=>{
+    if(i===0)return 0;
+    const [x0,z0]=all[i-1],[x1,z1]=all[Math.min(i+1,all.length-1)];
+    return (z1-z0)/(x1-x0);
+  });
   function nose(x) {
     const a=Math.abs(x);
     for(let i=1;i<noseStations.length;i++) {
       if(a<=noseStations[i][0]) {
         const [left,z0]=noseStations[i-1],[right,z1]=noseStations[i];
-        return mix(z0,z1,(a-left)/(right-left));
+        // A continuous tangent prevents visible corners running vertically
+        // through each chrome blade and through the transparent lens.
+        const span=right-left,t=(a-left)/span,h=t*t*(3-2*t);
+        return mix(z0,z1,h)+span*t*(1-t)*((1-t)*noseSlope[i-1]-t*noseSlope[i]);
       }
     }
     return noseStations.at(-1)[1];
   }
-  const grilleHeight=.286, grilleY=.887;
+  const grilleHeight=.241, grilleY=.919;
   function rolled(t,r) {
     if(t>=r) return 0;
     const delta=1-t/r;return 1-Math.sqrt(Math.max(0,1-delta*delta));
@@ -138,19 +146,12 @@ export function buildEnds(T) {
   function grille(u,v) {
     // The base is flatter than the broad upper chamfer, with rounded corners
     // pinching in across the lower third, as on the first 100-series grille.
-    const half=.438+.059*v-.041*rolled(v,.19)-.023*rolled(1-v,.10);
-    const x=(u*2-1)*half;
-    return [x,grilleY+grilleHeight*v+.009*(1-(x/.51)**2)*v,
-      nose(x)+.004+.044*(1-v)+.012*Math.sin(Math.PI*v)];
+    const half=.440+.057*v-.046*rolled(v,.26)-.031*rolled(1-v,.15);
+    const x=(u*2-1)*half,bow=1-(x/.51)**2;
+    return [x,grilleY+grilleHeight*v+.009*bow*v-.0045*bow*(1-v),
+      nose(x)+.004+(.044+.011*bow)*(1-v)+(.012+.010*bow)*Math.sin(Math.PI*v)];
   }
   const frontPaint=new T.MeshPhysicalMaterial({color:0x245555,roughness:.29,metalness:.50,clearcoat:.80,clearcoatRoughness:.18,side:T.DoubleSide});
-  // The painted sill turns continuously below both lamps into the side wing.
-  patch(front,'Body-colored lower fascia molding',(u,v)=>{
-    const x=(u*2-1)*.848, a=Math.abs(x);
-    const y=.835+.049*v+.014*(a/.848)**3;
-    const z=nose(x)+.055-.003*v+.003*Math.sin(v*Math.PI);
-    return [x,y,z];
-  },frontPaint,80,6);
   // Recess the black radiator and horizontal mesh behind the cast surround.
   patch(front,'Recessed black radiator core',(u,v)=>{
     const p=grille(u,v);p[2]-=.025;return p;
@@ -162,7 +163,8 @@ export function buildEnds(T) {
     const bevel=[[-.006,-.022],[-.006,-.007],[0,.003],[.005,.004],[.012,.002],[.017,-.005],[.018,-.013]];
     const t=v*(bevel.length-1),j=Math.min(bevel.length-2,Math.floor(t)),f=t-j;
     const d=mix(bevel[j][0],bevel[j+1][0],f),depth=mix(bevel[j][1],bevel[j+1][1],f);
-    return [p[0]-nx*d,p[1]-ny*d,p[2]+depth];
+    const cap=1+.52*T.MathUtils.smoothstep(ny,.70,.95)+.18*T.MathUtils.smoothstep(-ny,.69,.98);
+    return [p[0]-nx*d,p[1]-ny*d*cap,p[2]+depth];
   },chrome,rim.length,6);
   const grilleBlack=standard(0x22282a,.50,.24);
   for(let i=-10;i<=10;i++){
@@ -182,13 +184,14 @@ export function buildEnds(T) {
       const p=grille(.023+.954*u,v),taper=.80+.2*Math.sin(Math.PI*u);
       const profile=[[-.0115,-.012],[-.011,-.001],[-.008,.009],[.002,.014],[.007,.012],[.010,.004],[.012,-.019]];
       const t=k*(profile.length-1),i=Math.min(profile.length-2,Math.floor(t)),f=t-i;
-      p[1]+=taper*mix(profile[i][0],profile[i+1][0],f)-.004*Math.sin(Math.PI*u);
-      p[2]+=mix(profile[i][1],profile[i+1][1],f);return p;
+      const arc=Math.sin(Math.PI*u);
+      p[1]+=taper*mix(profile[i][0],profile[i+1][0],f)-.0065*arc;
+      p[2]+=mix(profile[i][1],profile[i+1][1],f)+.006*arc;return p;
     },chrome,44,6);
   }
   const emblemPosition=grille(.5,.505);
-  toyota(front,0,emblemPosition[1],emblemPosition[2]+.024,.135);
-  const reflector=standard(0xc3cac9,.32,.12,{map:map('ends-headlight.webp')});
+  toyota(front,0,emblemPosition[1],emblemPosition[2]+.031,.135);
+  const reflector=standard(0xe6e6d9,.28,.24,{map:map('ends-headlight.webp')});
   const lensCover=new T.MeshPhysicalMaterial({color:0x9cabad,roughness:.12,metalness:.025,
     clearcoat:1,clearcoatRoughness:.08,transparent:true,opacity:.058,depthWrite:false,side:T.FrontSide});
   const reflectorEdge=standard(0x929694,.31,.63), lensRubber=standard(0x292c29,.65,.04);
@@ -196,34 +199,61 @@ export function buildEnds(T) {
     // Looking at the front face, u runs from the outer corner lamp to the main
     // beam. The corner curves round the fender and the lens leans back at top.
     function optic(u,v) {
-      const inner=.448+.056*v;
-      const outer=.901-.024*(1-v)**2-.029*rolled(v,.25)-.015*rolled(1-v,.13);
+      const inner=.457+.047*v;
+      const outer=.901-.018*(1-v)**2-.041*rolled(v,.31)-.015*rolled(1-v,.15);
       const a=mix(outer,inner,u),x=side*a;
-      const y0=.882+.012*(1-u),y1=1.178+.004*u;
-      const bulge=.022*Math.sin(Math.PI*u)**.85*Math.sin(Math.PI*v)**.72;
+      const y0=.914+.014*(1-u)**2+.007*(1-u)**5,y1=1.165+.004*u;
+      const bulge=.028*Math.sin(Math.PI*u)**.89*Math.sin(Math.PI*v)**.84;
       return [x,mix(y0,y1,v),nose(a)+.005+.047*(1-v)+bulge];
     }
     function sideMarker(u,v) {
       const a=optic(0,v),t=1-u,x0=Math.abs(a[0]),z0=a[2];
-      const z1=1.956+.106*(1-v)**2+.071*v**5,x1=.925;
+      const z1=1.956+.106*(1-v)**2+.071*v**5;
+      const x1=.904+.004*(1-v)+.016*Math.sin(Math.PI*v);
       // Maintain the tangent across the corner with a cubic optical section.
       // The lens then becomes nearly parallel to the side as it approaches the wing.
-      const y=mix(a[1],mix(1.025,1.150,v),u**.91);
-      const x=t**3*x0+3*t*t*u*(x0+.031)+3*t*u*u*(x1+.002)+u**3*x1;
-      const z=t**3*z0+3*t*t*u*(z0-.028)+3*t*u*u*(z1+.071)+u**3*z1;
+      const y=mix(a[1],mix(1.025,1.148,v),u*u*(2.4-1.4*u));
+      const x=t**3*x0+3*t*t*u*(x0+.043)+3*t*u*u*x1+u**3*x1;
+      const z=t**3*z0+3*t*t*u*(z0-.034)+3*t*u*u*(z1+.064)+u**3*z1;
       return [side*x,y,z];
     }
-    // Roll the fender skin under the pointed corner indicator into the narrow
-    // green strip above the bumper. The shell's lamp pocket is recessed here.
-    const apron=patch(front,'Continuous painted fender return below the corner lamp',(u,v)=>{
-      const marker=sideMarker(u,0), f=1-(1-u)**4,rearEdge=.934;
-      const railX=mix(.848,rearEdge,f);
-      const h=mix(.835+.014,.842,u);
-      return [side*(mix(railX,Math.abs(marker[0]),v)-.019*T.MathUtils.smoothstep(u,.70,1)*Math.sin(v*Math.PI)-.007*T.MathUtils.smoothstep(u,.83,1)*(1-v)),
-        mix(h,marker[1]+.003,v),
-        mix(marker[2]+.002,marker[2]-.0007,v)];
-    },frontPaint,43,14,side<0);
-    applySideSurface(T,apron,'paint');
+    patch(front,'Painted wing between grille surround and headlamp',(u,v)=>{
+      const left=grille(1,v),right=optic(1,v);
+      return [side*mix(left[0]-.004,Math.abs(right[0])+.003,u),mix(left[1],right[1],u),
+        mix(left[2]-.012,right[2]-.018,u)-.004*Math.sin(Math.PI*u)];
+    },frontPaint,5,28,side<0);
+    // Sweep one pressed panel from the centreline beneath the grille and
+    // around the marker. The tangent and paint continue across the bend.
+    const outerLens=Math.abs(optic(0,0)[0]),joinU=.80;
+    const chin=patch(front,'Swept painted lower fascia and fender return',(along,v)=>{
+      const lowerRoll=.018*(1-Math.sin(v*Math.PI/2));
+      if(along<=joinU) {
+        const u=along/joinU,a=outerLens*u,mid=1-T.MathUtils.smoothstep(a,.22,.52);
+        const chin=.862+.006*u*u,upper=.916+.019*u**3-.004*(1-T.MathUtils.smoothstep(a,.34,.52));
+        const z=nose(a)+.058+.010*mid-.006*v-lowerRoll;
+        return [side*a,mix(chin,upper,v),z];
+      }
+      const u=(along-joinU)/(1-joinU),marker=sideMarker(u,0),f=1-(1-u)**3;
+      const railX=mix(outerLens,.934,f);
+      const y=mix(mix(.868,.842,u),marker[1],v);
+      const root=1-T.MathUtils.smoothstep(u,0,.28);
+      const z=marker[2]+.006*(1-v)-root*lowerRoll;
+      const x=mix(railX,Math.abs(marker[0]),v);
+      // The factory fender already fills the area below the indicator aft
+      // of z=2.15. Turn the skin under this existing stamping, keeping a
+      // narrow return where the lamp comes out of its recessed pocket.
+      const reveal=1-T.MathUtils.smoothstep(y,marker[1]-.036,marker[1]-.003);
+      const join=(1-T.MathUtils.smoothstep(z,2.079,2.149))*reveal;
+      const fender=.891+.165*Math.max(0,2.13-z);
+      return [side*mix(x,fender,join),y,z];
+    },frontPaint,160,14,side<0);
+    applySideSurface(T,chin,'paint');
+    const chinUV=chin.geometry.attributes.uv;
+    for(let i=0;i<chinUV.count;i++) {
+      const a=Math.abs(chin.geometry.attributes.position.getX(i));
+      const frontWeight=1-T.MathUtils.smoothstep(a,.82,.92);
+      chinUV.setY(i,mix(Math.max(.16,chinUV.getY(i)),.256,frontWeight));
+    }
     function opticalUV(mesh,start,end) {
       const uv=mesh.geometry.getAttribute('uv');
       for(let j=0;j<uv.count;j++)uv.setX(j,mix(start,end,uv.getX(j)));
@@ -256,11 +286,17 @@ export function buildEnds(T) {
       const p=optic(u,v);
       // The dark horizontal shelf and parabolic recess recede inside the main
       // beam independently of the convex exterior glazing.
-      const compartment=u<.233?u/.233:(u-.233)/.767;
-      p[2]-=.006+(.029*Math.sin(Math.PI*compartment)**1.3)*Math.sin(v*Math.PI)**1.2;
+      // The outer turn lamp, narrow position lamp and large main reflector
+      // each have their own pressed bowl. The main reflector's optical
+      // centre sits above the fluted lower shelf in the reference photos.
+      const turn=u<.233,position=!turn&&u<.417;
+      const chamber=turn?u/.233:position?(u-.233)/.184:(u-.417)/.583;
+      const vertical=v<.61?v/.61:(1-v)/.39;
+      const bowl=Math.sin(Math.PI*chamber)**.77*Math.sin(Math.PI/2*vertical)**.86;
+      p[2]-=.007+(turn?.026:position?.035:.053)*bowl;
       return p;
     };
-    opticalUV(patch(front,'Prismatic front reflector and corner lamp',refracted,reflector,66,28,side>0),.115,1);
+    opticalUV(patch(front,'Prismatic front reflector and corner lamp',refracted,reflector,78,32,side>0),.115,1);
     // Shallow chrome reveal between the optical assembly and the clear cover.
     patch(front,'Internal bright headlamp reveal',(u,v)=>{
       const p=outline[Math.round(u*(outline.length-1))];
@@ -288,10 +324,11 @@ export function buildEnds(T) {
   const grain=map('ends-steel-grain.webp');
   if(grain) {grain.wrapS=grain.wrapT=T.RepeatWrapping;grain.repeat.set(6,4);bumperFinish.map=grain;}
   const lowerFold=standard(0x292d2f,.66,.34);
-  // x, upper leading Z, lower leading Z, top, bottom, rear of top deck.
-  const wings=[[0,2.495,2.421,.844,.506,2.313],[.407,2.495,2.421,.844,.506,2.306],
-    [.807,2.417,2.361,.842,.558,2.203],[.953,2.266,2.220,.843,.621,2.108],
-    [.966,2.149,2.119,.843,.656,2.054],[.941,1.886,1.891,.841,.712,1.862]];
+  // x, leading Z at the top and bottom bends, top and bottom heights, then
+  // the Z and lateral inset where the top deck disappears under the wings.
+  const wings=[[0,2.685,2.588,.871,.516,2.313,0],[.407,2.685,2.588,.871,.516,2.306,0],
+    [.915,2.404,2.351,.848,.572,2.186,.045],[.974,2.257,2.218,.842,.628,2.088,.089],
+    [.986,2.116,2.094,.840,.668,2.023,.102],[.956,1.849,1.855,.836,.709,1.823,.104]];
   const mixV=(a,b,f)=>a.map((n,i)=>mix(n,b[i],f));
   function uvPolygon(name,points,holes,fn,material) {
     const sets=[points,...holes], ps=sets.map(set=>set.map(p=>new T.Vector2(...p)));
@@ -315,8 +352,8 @@ export function buildEnds(T) {
         return [side*x,mix(bottom+.017,top-.010,v),mix(zBottom,zTop,v)];
       };
       const deck=(u,v)=>{
-        const [x,zt,,top,,back]=mixV(a,b,u);
-        const xt=i>=3 ? x-.104*v : x;
+        const [x,zt,,top,,back,inset]=mixV(a,b,u);
+        const xt=x-inset*v;
         return [side*xt,top-.009*v,mix(zt-.008,back,v)];
       };
       const lampOpening=[[.334,.324],[.745,.324],[.800,.638],[.782,.737],[.307,.737],[.274,.662],[.281,.391]];
@@ -332,6 +369,12 @@ export function buildEnds(T) {
       if(slot){
         const lower=(u,v)=>{const p=deck(u,v);p[1]-=.027;return p;};
         uvPolygon('Dark bumper deck cavity',slot,[],lower,voidBlack);
+        for(let j=0;j<slot.length;j++){
+          const a=slot[j],b=slot[(j+1)%slot.length];
+          patch(front,'Folded inner edge of steel deck port',(u,v)=>{
+            const p=deck(mix(a[0],b[0],u),mix(a[1],b[1],u));p[1]-=.027*v;return p;
+          },lowerFold,1,1);
+        }
       }
       // Both bent steel edges have their own small bevels. The underside folds
       // back to the chassis instead of simply ending at a vertical face.
@@ -378,7 +421,11 @@ export function buildEnds(T) {
     ],lowerFold);
   }
   const registrationBracket=new T.Group();front.add(registrationBracket);
-  registrationBracket.name='Registration bracket on raked center panel';registrationBracket.position.set(0,.748,2.477);registrationBracket.rotation.x=.201;
+  const [,upperZ,lowerZ,upperY,lowerY]=wings[0];
+  const rise=upperY-.010-(lowerY+.017),slope=(upperZ-lowerZ)/rise;
+  registrationBracket.name='Registration bracket on raked center panel';
+  registrationBracket.position.set(0,.792,lowerZ+(.792-lowerY-.017)*slope+.006);
+  registrationBracket.rotation.x=Math.atan(slope);
   plate(registrationBracket,'Front Kenyan registration',0,0,0,.466,.110,'ends-plate-front.webp');
   // Tail lamps and bumper share the corrected rear overhang of the shell.
   rear.position.z=-.122;

@@ -25,8 +25,10 @@ export function buildBody(THREE) {
     color, metalness:.17, roughness, clearcoat:1, clearcoatRoughness:.08,
     transparent:true, opacity, depthWrite:false, side:THREE.DoubleSide, envMapIntensity:.88
   });
-  const frontGlass = pane(0x657f89,.385,.135);
-  frontGlass.metalness=.19;frontGlass.clearcoat=.72;frontGlass.envMapIntensity=1.04;
+  // The tall laminated screen catches broad silver-green sky reflections in
+  // the forward three-quarter photographs. Leave some cabin visible beneath.
+  const frontGlass = pane(0xaec5c1,.73,.105);
+  frontGlass.metalness=.24;frontGlass.clearcoat=.92;frontGlass.envMapIntensity=1.23;
   const driverGlass = pane(0x56717d,.615,.135);
   driverGlass.metalness=.24;driverGlass.clearcoat=.69;driverGlass.envMapIntensity=1.09;
   const privacyGlass = pane(0x24333e,.88,.15);
@@ -103,25 +105,33 @@ export function buildBody(THREE) {
   }
 
   const z0=-2.366,z1=2.15;
-  const width=curve([[-2.366,.833],[-2.29,.868],[-2.26,.880],[-2.17,.895],[-1.97,.910],[-1.63,.917],[-1.12,.913],[-.40,.910],[.33,.914],[.74,.918],[1.12,.920],[1.52,.923],[1.83,.920],[2.00,.917],[2.15,.912]]);
-  const top=curve([[-2.366,1.242],[-2.26,1.245],[-1.85,1.253],[-1.22,1.259],[-.40,1.270],[.25,1.275],[.70,1.267],[.94,1.265],[1.18,1.258],[1.52,1.241],[1.78,1.224],[1.99,1.197],[2.15,1.178]]);
+  const width=curve([[-2.366,.833],[-2.29,.868],[-2.26,.880],[-2.17,.895],[-1.97,.910],[-1.63,.917],[-1.12,.913],[-.40,.910],[.33,.914],[.74,.918],[1.12,.910],[1.52,.910],[1.83,.912],[2.00,.917],[2.15,.912]]);
+  const shoulderLine=curve([[-2.366,1.242],[-2.26,1.245],[-1.85,1.253],[-1.22,1.259],[-.40,1.270],[.25,1.275],[.70,1.267],[.94,1.252],[1.18,1.239],[1.52,1.217],[1.78,1.202],[1.99,1.184],[2.15,1.178]]);
+  const leadingRoll=(z,end)=>.013*smooth(z,end-.16,end);
+  const top=z=>shoulderLine(z)-leadingRoll(z,z1);
   const silverLine=curve([[-2.26,.789],[-1.48,.802],[-.56,.813],[.72,.819],[1.65,.832],[2.15,.837]]);
   // These are the arch outlines, rocker ends and bumper junctions traced on
   // the owner's side photograph. Each wheel opening has its own shape.
   const low=curve([[-2.26,.708],[-2.01,.709],[-1.960,.710],[-1.926,.726],[-1.887,.766],[-1.839,.802],[-1.76,.832],[-1.67,.850],[-1.52,.861],[-1.37,.864],[-1.22,.856],[-1.143,.834],[-1.079,.791],[-1.018,.704],[-.967,.595],[-.940,.527],[-.917,.494],[-.889,.486],[-.32,.481],[.334,.488],[.866,.489],[.913,.492],[.935,.526],[.966,.606],[1.012,.714],[1.065,.800],[1.132,.866],[1.211,.903],[1.299,.927],[1.390,.935],[1.496,.934],[1.591,.927],[1.680,.911],[1.772,.882],[1.826,.854],[1.858,.842],[1.923,.844],[2.15,.852]]);
-  const lowerWidth=curve([[.48,-.060],[.50,-.038],[.526,-.018],[.558,-.012],[.642,-.005],[.729,.000],[.792,.002],[.835,.001],[.94,-.002],[1.033,.000],[1.11,.005],[1.182,.008],[1.235,.002],[1.28,-.010]]);
+  const lowerWidth=curve([[.48,-.067],[.50,-.044],[.526,-.024],[.558,-.015],[.642,-.004],[.729,.003],[.792,.005],[.835,.002],[.94,.003],[1.033,.009],[1.095,.012],[1.145,.011],[1.19,.006],[1.235,-.005],[1.28,-.025]]);
+  const lampWingSection=curve([[.48,-.060],[.526,-.018],[.642,-.005],[.792,.002],[.94,-.002],[1.033,0],[1.11,.005],[1.182,.008],[1.235,.002],[1.28,-.010]]);
   const gaussian=(x,center,spread)=>Math.exp(-(((x-center)/spread)**2));
   const indicatorLower=curve([[1.92,1.119],[1.95,1.111],[2.00,1.080],[2.07,1.030],[2.12,.980],[2.15,.950]]);
   function sideX(z,y){
     const signFront=z>0,axle=signFront?1.42:-1.43;
-    const wheelFoot=1-smooth(Math.abs(z-axle),signFront?.364:.315,signFront?.719:.659);
+    const wheelFoot=1-smooth(Math.abs(z-axle),signFront?.285:.295,signFront?.691:.633);
     const dz=z-axle;
     // The broad stamped brow has a much flatter upper arc than the wheel
     // opening. Keeping these two curves independent avoids a tubular lip.
-    const brow=(signFront?1.117:1.068)-.120*(dz/.56)**2+.012*dz;
-    const flare=wheelFoot*(.028*gaussian(y,brow-.055,.139)+.006*gaussian(y,brow,.060)+
-      .016*gaussian(y,brow-.158,.213));
-    const shoulder=.005*gaussian(y,top(z)-.078,.047);
+    const brow=(signFront?1.124:1.048)-(signFront?.110:.082)*(dz/.56)**2-.014*dz;
+    // A shallow shelf falls steeply back into the upper wing. The lower
+    // cheek is much fuller and stretches down towards the flange. The two
+    // ends disappear into the doors before the stamped lip ends at the lamp.
+    const rise=y-brow;
+    const browRound=gaussian(rise,-.025,rise<-.025 ? .144:.056);
+    const cheek=gaussian(rise,-.119,.128);
+    const flare=wheelFoot*((signFront?.038:.027)*browRound+.013*cheek);
+    const shoulder=.005*gaussian(y,top(z)-.074,.056);
     // Three softly rolled lines on the silver door protectors; the lip is
     // pressed into the width of the panel, so it follows the wheel openings.
     const belt=silverLine(z);
@@ -129,8 +139,11 @@ export function buildBody(THREE) {
     const tip=smooth(z,1.80,z1);
     // The indicator rolls from the front face into a pocket in the wing.
     const lip=indicatorLower(z);
-    const pocket=tip*(.018+.072*smooth(y,lip-.020,lip+.014)*(1-smooth(y,1.147,1.179)));
-    return width(z)+lowerWidth(y)+flare+shoulder+rib-pocket;
+    const lampY=y+leadingRoll(z,z1)*smooth(y,1.09,1.15);
+    const pocket=tip*(.018+.072*smooth(y,lip-.020,lip+.014)*(1-smooth(lampY,1.147,1.179)));
+    const lampJoin=smooth(z,1.92,2.14);
+    const section=mix(lowerWidth(y),lampWingSection(lampY),lampJoin);
+    return width(z)+section+flare+shoulder+rib-pocket;
   }
   const sidePoint=(s,z,y,d=0)=>V(s*(sideX(z,y)+d),y,z);
   const bodyLower=(z)=>low(z)+.001;
@@ -208,14 +221,30 @@ export function buildBody(THREE) {
   const frontBow=curve([[0,2.338],[.31,2.330],[.54,2.308],[.69,2.283],[.826,2.240],[.926,2.199],[1,2.15]]);
   const endZ=(front,u)=>front ? frontBow(Math.abs(u)) : -2.44+.074*(Math.abs(u)**3.5);
   const hoodSpine=curve([[.68,1.303],[.93,1.303],[1.10,1.302],[1.38,1.293],[1.65,1.276],[1.9,1.252],[2.08,1.231],[2.22,1.213],[2.338,1.194]]);
-  const windshieldBase=u=>.936-.233*Math.abs(u)**2.35;
+  // In plan the windscreen is wide and almost flat in the middle, then
+  // rolls into the A-posts more sharply in its last hand's breadth.
+  function curvedSection(a,power,roll){
+    const extent=.995, minimum=(1-extent**power)**roll;
+    return ((1-(extent*Math.min(Math.abs(a),1))**power)**roll-minimum)/(1-minimum);
+  }
+  const windBow=a=>curvedSection(a,2.45,.63);
+  const windshieldBase=u=>.703+.233*windBow(u);
   function hood(z,u){
     const a=Math.min(Math.abs(u),1),outer=sideX(Math.min(z,z1),top(Math.min(z,z1)));
-    const edgeY=top(Math.min(z,z1))-.006*Math.max(0,(z-z1)/.188);
-    const crown=Math.sqrt(Math.max(0,1-a**3.4));
-    const crest=.013*gaussian(a,.765,.103)*Math.sin(Math.PI*clamp((z-.60)/1.86,0,1))**.52;
-    const channel=-.0044*gaussian(a,.665,.030)*(1-smooth(z,2.22,2.34));
-    return V(u*outer,mix(edgeY,hoodSpine(z),crown)+crest+channel,z);
+    const edgeY=shoulderLine(Math.min(z,z1))-.006*Math.max(0,(z-z1)/.188);
+    const start=windshieldBase(a),end=endZ(true,a);
+    const along=clamp((z-start)/(end-start),0,1);
+    const form=smooth(along,0,.28)*(1-smooth(along,.75,1));
+    const originalCrown=Math.sqrt(Math.max(0,1-a**3.4));
+    const crown=mix(originalCrown,curvedSection(a,2.18,.53),form);
+    // The centre panel is broadly domed, with a shallower drawn channel
+    // before each wing rises again into the rounded top of the wheel housing.
+    // Both sections return to the closing lines around the screen and lamps.
+    const spine=hoodSpine(z)+.032*form;
+    const fenderTop=.018*gaussian(a,.839,.093)*form;
+    const draw=-.009*gaussian(a,.727+.070*along,.063)*form;
+    const pressing=(fenderTop+draw)*(1-smooth(a,.955,1));
+    return V(u*outer,mix(edgeY,spine,crown)+pressing-leadingRoll(z,end),z);
   }
   const bonnet=grid('compound-curved bonnet, fender brows and nose',96,63,(x,t)=>{
     // More samples across the extremely rounded outer edge.
@@ -224,12 +253,13 @@ export function buildBody(THREE) {
   },paint,V(0,1,0));
   applyBonnetSurface(THREE,bonnet);
   for(const s of [-1,1]){
+    const lampDivider=.797/sideX(z1,top(z1));
     const crease=u=>{
-      const a=mix(.746,.639,smooth(u,0,1))*s;
-      const z=mix(windshieldBase(a)+.065,endZ(true,a)-.004,u);
+      const a=s*(mix(.853,lampDivider,smooth(u,0,1))+.008*Math.sin(Math.PI*u));
+      const z=mix(windshieldBase(a)+.061,endZ(true,a)-.002,u);
       return hood(z,a);
     };
-    edge('bonnet closing gap',t=>{const p=crease(t);p.y+=.0014;return p;},.0028,panelGap,54);
+    edge('bonnet closing gap',t=>{const p=crease(t);p.y+=.0010;return p;},.0020,panelGap,54);
   }
   // Black perforated scuttle and the sealed rear lip of the hood.
   const cowl=(a,t)=>{const z=windshieldBase(a)+mix(-.023,.075,t);const p=hood(z,a);p.y+=.003;return p;};
@@ -254,11 +284,14 @@ export function buildBody(THREE) {
 
   // Calibrated side-glass silhouette, including the tapering tumblehome and
   // the slight barrel to each piece of glass in both directions.
+  const roofEdgeHeight=curve([[-2.026,1.819],[-1.875,1.823],[-1.64,1.824],[-.58,1.827],[-.26,1.828],[-.071,1.823],[-.054,1.821]]);
   const cabWidth=(y,z)=>{
-    const t=clamp((y-top(clamp(z,z0,.703)))/(.821+1.0-top(clamp(z,z0,.703))),0,1);
-    const base=sideX(clamp(z,z0,.703),top(clamp(z,z0,.703)));
+    const station=clamp(z,z0,.703),waist=top(station);
+    const t=clamp((y-waist)/(roofEdgeHeight(z)-waist),0,1);
+    const base=sideX(station,waist);
     const eave=.782-.012*smooth(-z,1.79,2.32)-.005*smooth(z,.02,.68);
-    return mix(base,eave,.70*t+.30*t*t)+.010*Math.sin(Math.PI*t);
+    const corner=.020*smooth(-z,1.82,2.33)+.011*smooth(z,.33,.69);
+    return mix(base,eave,.66*t+.34*t*t)+(.012-corner)*Math.sin(Math.PI*t)-.016*t**9;
   };
   const cabP=(s,z,y,d=0)=>V(s*(cabWidth(y,z)+d),y,z);
   const outerFront=curve([[1.266,.703],[1.348,.622],[1.476,.498],[1.610,.341],[1.709,.208],[1.773,.101],[1.806,.019],[1.821,-.054]]);
@@ -360,11 +393,12 @@ export function buildBody(THREE) {
   }
 
   function frontSurface(a,h,d=0){
-    const y=mix(1.266,1.821,h),z=outerFront(y),c=1-Math.abs(a)**2.35;
+    const y=mix(1.266,1.821,h),z=outerFront(y),c=windBow(a);
     return V(a*cabWidth(y,z),y+c*mix(.036,.028,h)+d*.65,z+c*mix(.233,.144,h)+d);
   }
   function rearSurface(a,h,d=0){
-    const y=mix(1.242,1.819,h),z=outerRear(y),c=1-Math.abs(a)**3.15;
+    const y=mix(1.242,1.819,h),z=outerRear(y);
+    const c=mix(1-Math.abs(a)**3.5,curvedSection(a,3.6,.55),smooth(h,0,.23));
     return V(a*cabWidth(y,z),y+c*mix(.021,.022,h)+d*.27,z-c*mix(.074,.100,h)-d);
   }
   function glazedEnd(name,surface,glass,front,lower,upper,width){
@@ -402,17 +436,20 @@ export function buildBody(THREE) {
   function roof(a,v,offset=0){
     const front=frontSurface(a,1),rear=rearSurface(a,1);
     const z=mix(rear.z,front.z,v);
-    const crown=1-Math.abs(a)**2.7;
+    const sideZ=mix(outerRear(1.819),outerFront(1.821),v);
+    const edgeY=roofEdgeHeight(sideZ);
+    const shoulder=cabWidth(edgeY,sideZ);
+    const crown=curvedSection(a,3.45,.54);
     const span=Math.sin(Math.PI*v)**.72;
-    const bow=span*(.006+.014*crown);
+    const bow=edgeY-mix(1.819,1.821,v)+span*.020*crown;
     const groove=.0045*gaussian(Math.abs(a),.666,.032)*span;
     // Shallow longitudinal pressings stiffen the rear roof panel. Their ends
     // fade smoothly before the curved front/rear headers.
     const ribs=(.0045*gaussian(a,0,.085)+.0042*gaussian(Math.abs(a),.32,.075)+
       .0036*gaussian(Math.abs(a),.587,.061))*smooth(v,.095,.15)*(1-smooth(v,.71,.84));
-    return V(a*mix(Math.abs(rearSurface(1,1).x),Math.abs(frontSurface(1,1).x),v),mix(rear.y,front.y,v)+bow-groove+ribs+offset,z);
+    return V(a*shoulder,mix(rear.y,front.y,v)+bow-groove+ribs+offset,z);
   }
-  grid('gently crowned roof pressing',70,48,(u,v)=>roof(2*u-1,v),paint,V(0,1,0));
+  grid('gently crowned roof pressing',80,48,(u,v)=>roof(Math.sin((u-.5)*Math.PI),v),paint,V(0,1,0));
   for(const s of [-1,1]){
     edge('longitudinal roof ditch moulding',t=>roof(s*.895,mix(.028,.958,t),.0025),.0042,darkTrim,48);
     edge('painted gutter seam',t=>roof(s*.963,mix(.02,.971,t),.001),.0024,panelGap,48);

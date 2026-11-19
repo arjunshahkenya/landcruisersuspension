@@ -107,9 +107,9 @@ export function buildAccessories(THREE) {
   // The OE towers sit lower than the top of the roof crown, near its shoulders.
   // Compress their vertical rise and the basket profile to the measured stack.
   base.scale.y = .80;
-  base.position.y = .357;
+  base.position.y = .366;
   rack.scale.y = .91;
-  rack.position.y = .140;
+  rack.position.y = .149;
   for (const side of sides) {
     const x = side * .67;
     // OE track follows the crown; three feet hold each raised longitudinal rail.
@@ -183,23 +183,28 @@ export function buildAccessories(THREE) {
   const spoiler = group('Rear roof spoiler');
   // The upper hatch spoiler wraps down on each end, above the glass.
   const spoilerSlices = [];
-  for (let i=0;i<=22;i++) {
-    const u=(i-11)/11, edge=Math.pow(Math.abs(u),5);
-    const x=u*.797, y=1.827-.066*edge, z=-2.167+.025*edge;
+  for (let i=0;i<=42;i++) {
+    // More stations at the ends resolve the moulded corner that wraps down
+    // over each D-pillar and sweeps forward towards the hatch mounting foot.
+    const u=Math.sin((i/42-.5)*Math.PI), flank=Math.abs(u);
+    const edge=flank**5, corner=flank**13;
+    const x=u*.806, y=1.828-.047*edge-.038*corner, z=-2.167+.033*edge+.028*corner;
     // Cross sections wind CCW in the YZ plane when viewed from positive X.
     const profile = [
       [.018, .071],[.033,.057],[.043,.018],[.038,-.058],
       [.024,-.138],[.013,-.176],[-.014,-.18],[-.023,-.166],
       [-.006,-.109],[-.004,-.061],[-.014,-.015],[-.033,.066],
     ].reverse();
-    spoilerSlices.push(profile.map(([dy,dz])=>[x,y+dy*(1+.43*edge),z+dz]));
+    spoilerSlices.push(profile.map(([dy,dz])=>[
+      x,y+dy*(1+.32*edge-.57*corner),z+dz*(1-.30*corner),
+    ]));
   }
   mesh(spoiler,'Body-colour spoiler shell',loft(spoilerSlices),paint);
   for (const side of sides) {
     const x=side*.731;
     shapedBar(spoiler,'Hatch mounting foot',rubber,[
-      [x,1.759,-2.225,.084,.03], [x,1.775,-2.18,.105,.054],
-      [x,1.771,-2.123,.105,.047], [x,1.765,-2.085,.076,.025],
+      [x,1.747,-2.225,.084,.081], [x,1.771,-2.18,.105,.035],
+      [x,1.796,-2.123,.105,.020], [x,1.813,-2.085,.076,.011],
     ]);
   }
   bar(spoiler,'High-mounted lamp gasket',[-.321,1.826,-2.344],[.321,1.826,-2.344],.017,.022,rubber);
@@ -220,11 +225,20 @@ export function buildAccessories(THREE) {
     head.position.set(shellX,shellY,shellZ);
     head.rotation.y=side*.165;
     head.scale.set(1.10,1.12,1.07);
-    const ring=(w,h,z,dx=0,dy=0)=>roundSection(dx*side,dy,z,w,h,.50,-side*.0065);
+    // The folding head has a broad, almost square inboard heel. The outer
+    // lower corner rolls up and the forward nose rolls back into the glass.
+    const ring=(w,h,z,dx=0,dy=0,roundness=.52)=>roundSection(0,0,z,w,h,roundness).map(([x,y])=>{
+      const outboard=side*x/(w*.5), vertical=y/(h*.5);
+      const rise=Math.max(0,outboard)**2*(1-vertical)*.005;
+      return [x+side*dx,y+dy+rise-.004*outboard,z-.008*Math.max(0,outboard)**2];
+    });
     mesh(head,'Painted mirror housing',loft([
-      ring(.204,.142,-.042),ring(.224,.149,-.033),ring(.232,.147,.006),
-      ring(.216,.140,.047,-.003,.001),ring(.178,.113,.077,-.013,-.003),
-      ring(.119,.079,.089,-.022,-.007), ring(.035,.032,.094,-.025,-.009),
+      ring(.204,.140,-.042),ring(.219,.147,-.036),ring(.227,.150,-.026),
+      ring(.231,.150,-.011),ring(.230,.146,.008),ring(.225,.141,.025,-.002),
+      ring(.214,.131,.043,-.005,-.001,.58),ring(.194,.118,.058,-.008,-.003,.65),
+      ring(.166,.099,.071,-.013,-.005,.72),ring(.129,.080,.081,-.018,-.008,.79),
+      ring(.078,.051,.089,-.023,-.010,.87),ring(.035,.024,.092,-.026,-.010,.93),
+      ring(.003,.003,.093,-.026,-.010,.98),
     ]),paint);
     mesh(head,'Mirror bead and rim',loft([
       ring(.210,.145,-.048),ring(.218,.151,-.045),ring(.222,.151,-.036),
@@ -235,15 +249,16 @@ export function buildAccessories(THREE) {
   }
   // A single auxiliary mirror sits on the vehicle's left wing.
   const fender=group('Left front wing mirror');
-  fender.position.y = -.025; // Seat the gasket on the falling bonnet shoulder.
   const baseX=.785, baseZ=1.974;
+  // The gasket bears on the sloping fender. Keep its rim just above the
+  // stamping from the high rear edge to the lower edge towards the headlamp.
   shapedBar(fender,'Wing mirror base gasket',rubber,[
-    [baseX,1.244,baseZ-.068,.037,.014],[baseX,1.246,baseZ-.047,.077,.020],
-    [baseX,1.246,baseZ+.036,.084,.020],[baseX,1.243,baseZ+.067,.048,.016],
+    [baseX,1.251,baseZ-.068,.037,.014],[baseX,1.249,baseZ-.047,.077,.020],
+    [baseX,1.237,baseZ+.036,.084,.020],[baseX,1.231,baseZ+.067,.048,.016],
   ]);
   shapedBar(fender,'Wing mirror pedestal',polymer,[
-    [baseX,1.248,baseZ-.047,.055,.024],[baseX,1.264,baseZ-.023,.066,.044],
-    [baseX,1.266,baseZ+.018,.064,.044],[baseX,1.248,baseZ+.051,.044,.022],
+    [baseX,1.257,baseZ-.047,.055,.024],[baseX,1.266,baseZ-.023,.066,.044],
+    [baseX,1.262,baseZ+.018,.064,.044],[baseX,1.242,baseZ+.051,.044,.022],
   ]);
   rod(fender,'Wing mirror stalk',[baseX,1.274,baseZ],[baseX+.014,1.338,baseZ-.026],.017,polymer);
   const fenderHead=group('Auxiliary convex mirror',fender);
@@ -284,7 +299,7 @@ export function buildAccessories(THREE) {
       const guard=group((side<0 ? 'Right ' : 'Left ') + (isRear?'rear':'front')+' mudflap');
       // Section tops taper to meet the flared wheel arch; the lower rubber curls aft.
       const width=isRear?.306:.287;
-      const xs=side*.821, bottom=isRear?.145:.155;
+      const xs=side*.821, bottom=isRear?.185:.276;
       const profile=[
         [-.48,.552],[-.34,.594],[.32,.603],[.5,.551],
         [.48,.307],[.43,bottom+.013],[.33,bottom],[-.37,bottom+.009],[-.5,bottom+.041],

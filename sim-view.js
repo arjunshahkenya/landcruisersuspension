@@ -16,7 +16,9 @@ async function createHardware(canvas, context) {
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x233931,.043);
   scene.environment = reflectionEnvironment(renderer);
-  scene.add(new THREE.HemisphereLight(0xe1f4ff,0x84907b,1.0));
+  // Open-sky fill leaves enough difference between vertical doors and their
+  // upward-facing shoulders for the paint reflection to trace the stamping.
+  scene.add(new THREE.HemisphereLight(0xe1edfa,0x978d7b,.74));
   const sun = new THREE.DirectionalLight(0xfff0d1,2.3);
   sun.position.set(-5,8,4);
   sun.castShadow = true;
@@ -26,7 +28,7 @@ async function createHardware(canvas, context) {
   sun.shadow.normalBias = .016;
   sun.shadow.bias = -.00012;
   scene.add(sun);
-  const edge = new THREE.DirectionalLight(0xc4e2ff,1.05);
+  const edge = new THREE.DirectionalLight(0xd3e5fa,.80);
   edge.position.set(3.7,4,-3.1);
   scene.add(edge);
   const underLight = new THREE.DirectionalLight(0xe5eee0,.28);
